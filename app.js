@@ -11,7 +11,7 @@ dotenv.config();
 app.use(express.json());
 
 const dbUrl = process.env.MONGODB_URL;
-
+const PORT = process.env.PORT;
 mongoose.connect(dbUrl, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
@@ -25,6 +25,6 @@ app.use(cors());
 app.use('/api', usersRoutes);
 app.use('/api', reservationsRoutes);
 
-app.listen(8084, () => {
-  console.log('Servidor Express en ejecución en el puerto 8084');
+app.listen(PORT, () => {
+  console.log('Servidor Express en ejecución en el puerto' + PORT);
 });
