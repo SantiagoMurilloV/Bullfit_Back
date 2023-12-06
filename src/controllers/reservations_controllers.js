@@ -139,7 +139,6 @@
         if (!reservations) {
           return res.status(404).json({ error: 'Usuario no encontrado' });
         }
-        console.log('res',reservations)
         res.status(200).json(reservations);
       })
       .catch((error) => {
