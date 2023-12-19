@@ -101,34 +101,21 @@ exports.getAllReservationsId = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener las reservas' });
   }
 };
-exports.updateUserTrainingType = (req, res) => {
+exports.updateUserTrainingType = async (req, res) => {
   const reservationId = req.params.reservationId;
-  const { TrainingType, Status, Attendance, hour } = req.body;
+  const updateFields = req.body;
 
-  const updateFields = {};
-  if (TrainingType) {
-    updateFields.TrainingType = TrainingType;
+  try {
+    const updatedReservation = await Reservation.findByIdAndUpdate(reservationId, updateFields, { new: true });
+    if (!updatedReservation) {
+      return res.status(404).json({ error: 'Reserva no encontrada' });
+    }
+    res.status(200).json(updatedReservation);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar la reserva' });
   }
-  if (Status) {
-    updateFields.Status = Status;
-  }
-  if (Attendance) {
-    updateFields.Attendance = Attendance;
-  }
-  if (hour) {
-    updateFields.hour = hour;
-  }
-  Reservation.findByIdAndUpdate(reservationId, updateFields, { new: true })
-    .then((updatedReservation) => {
-      if (!updatedReservation) {
-        return res.status(404).json({ error: 'Reserva no encontrada' });
-      }
-      res.status(200).json(updatedReservation);
-    })
-    .catch((err) => {
-      res.status(500).json({ error: 'Error al actualizar la reserva' });
-    });
 };
+
 
 
 exports.getUserReservations_ = (req, res) => {
@@ -164,39 +151,32 @@ exports.createReservation = async (req, res) => {
   }
 };
 
-exports.getUserReservations = (req, res) => {
+exports.getUserReservations = async (req, res) => {
   const userId = req.params.userId;
 
-  Reservation.find({ userId })
-    .then((reservations) => {
-      if (!reservations) {
-        return res.status(404).json({ error: 'Reservas no encontradas' });
-      }
-      res.status(200).json(reservations);
-    })
-    .catch((error) => {
-      res.status(500).json({ error: 'Error al obtener las reservas del usuario' });
-    });
+  try {
+    const reservations = await Reservation.find({ userId });
+    res.status(200).json(reservations);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener las reservas del usuario' });
+  }
 };
 
-exports.deleteReservation = (req, res) => {
+
+exports.deleteReservation = async (req, res) => {
   const reservationId = req.params.reservationId;
-  Reservation.findOneAndDelete({ _id: reservationId })
-    .then((deletedReservation) => {
-      if (!deletedReservation) {
 
-        return res.status(404).json({ error: 'Reserva no encontrada' });
-
-      }
-      res.status(200).json({ message: 'Reserva eliminada con éxito', deletedReservation });
-
-    })
-    .catch((error) => {
-      console.error(error);
-      res.status(500).json({ error: 'Error al eliminar la reserva' });
-
-    });
+  try {
+    const deletedReservation = await Reservation.findOneAndDelete({ _id: reservationId });
+    if (!deletedReservation) {
+      return res.status(404).json({ error: 'Reserva no encontrada' });
+    }
+    res.status(200).json({ message: 'Reserva eliminada con éxito', deletedReservation });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar la reserva' });
+  }
 };
+
 
 
 

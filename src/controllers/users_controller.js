@@ -1,17 +1,21 @@
 const { validationResult } = require('express-validator');
 const User = require('../models/users');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
-exports.login = (req, res) => {
+exports.login = async (req, res) => {
   const { username, password } = req.body;
 
+  try {
+    const user = await User.findOne({ username });
+    if (!user || !await bcrypt.compare(password, user.password)) {
+      return res.status(401).json({ error: 'Credenciales de inicio de sesión incorrectas' });
+    }
 
-  if (username === 'usuario' && password === 'contrasena') {
-
-    const token = 'token_de_autenticacion_generado'; 
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({ token });
-  } else {
-
-    res.status(401).json({ error: 'Credenciales de inicio de sesión incorrectas' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error en el servidor' });
   }
 };
 
@@ -44,30 +48,31 @@ exports.getUserById = (req, res) => {
 };
 
 
-exports.createUser = (req, res) => {
-  const {Active,Plan,FirstName, LastName, Phone, IdentificationNumber } = req.body;
+
+exports.createUser = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
+  const {Active,Plan,FirstName, LastName, Phone, IdentificationNumber } = req.body;
 
-  const newUser = new User({
-    Active,
-    Plan,
-    FirstName,
-    LastName,
-    Phone,
-    IdentificationNumber,
-  });
-
-  newUser.save()
-    .then((user) => {
-      res.status(201).json(user);
-    })
-    .catch((error) => {
-      res.status(500).json({ error: 'Error al crear el usuario' });
+  try {
+    const hashedPassword = await bcrypt.hash(IdentificationNumber, 10);
+    const newUser = new User({
+      Active,
+      Plan,
+      FirstName,
+      LastName,
+      Phone,
+      password: hashedPassword,
     });
+
+    const user = await newUser.save();
+    res.status(201).json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear el usuario' });
+  }
 };
 
 exports.updateUserStatus = async (req, res) => {
