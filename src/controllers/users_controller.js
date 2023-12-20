@@ -45,12 +45,17 @@ exports.getUserById = (req, res) => {
 
 
 exports.createUser = (req, res) => {
-  const {Active,Plan,FirstName, LastName, Phone, IdentificationNumber } = req.body;
+  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate } = req.body;
+  let { endDate } = req.body;
+
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
+  if (!endDate) {
+    endDate = '';
+  }
 
   const newUser = new User({
     Active,
@@ -59,6 +64,8 @@ exports.createUser = (req, res) => {
     LastName,
     Phone,
     IdentificationNumber,
+    startDate,
+    endDate
   });
 
   newUser.save()
@@ -66,20 +73,20 @@ exports.createUser = (req, res) => {
       res.status(201).json(user);
     })
     .catch((error) => {
-      res.status(500).json({ error: 'Error al crear el usuario' });
+
+      res.status(500).json({ error: 'Error al crear el usuario', details: error.message });
     });
 };
 
+
 exports.updateUserStatus = async (req, res) => {
   const userId = req.params.userId;
-  const { Active } = req.body;
-
-  // Puedes validar el campo Active aquí si es necesario
+  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate, endDate } = req.body;
 
   try {
     const user = await User.findByIdAndUpdate(
       userId,
-      { Active },
+      { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate, endDate },
       { new: true }
     );
 
@@ -93,3 +100,20 @@ exports.updateUserStatus = async (req, res) => {
     res.status(500).json({ error: 'Error al actualizar el estado del usuario' });
   }
 };
+
+exports.deleteUsers = (req, res) => {
+  const userId = req.params.userId; 
+  User.findOneAndDelete({ _id: userId }) 
+    .then((deletedUser) => {
+      if (!deletedUser) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+      }
+      res.status(200).json({ message: 'Usuario eliminado con éxito', deletedUser });
+    })
+    .catch((error) => {
+      console.error(error);
+      res.status(500).json({ error: 'Error al eliminar usuario' });
+    });
+};
+
+

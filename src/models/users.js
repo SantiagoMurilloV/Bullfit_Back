@@ -8,6 +8,8 @@ const userSchema = new mongoose.Schema({
   Plan: String,
   IdentificationNumber: String,
   Phone: String,
+  startDate:String,
+  endDate:String,
 });
 
 module.exports = mongoose.model('users', userSchema);

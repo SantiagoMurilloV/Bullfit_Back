@@ -4,7 +4,9 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const usersRoutes = require('./src/routes/api/users_routes');
 const reservationsRoutes = require('./src/routes/api/reservations_routes');
+const financeRoutes = require('./src/routes/api/finances_routes')
 const cors = require('cors');
+
 
 dotenv.config();
 
@@ -24,6 +26,7 @@ db.once('open', () => console.log('Conexión a la base de datos exitosa'));
 app.use(cors());
 app.use('/api', usersRoutes);
 app.use('/api', reservationsRoutes);
+app.use('/api', financeRoutes);
 
 app.listen(PORT, () => {
   console.log('Servidor Express en ejecución en el puerto' + PORT);
