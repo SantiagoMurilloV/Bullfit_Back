@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema({
   Phone: String,
   startDate:String,
   endDate:String,
+  registrationDate:String, 
 });
 
 module.exports = mongoose.model('users', userSchema);

@@ -6,11 +6,13 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "npx nodemon app",
-    "start": "node app"
+    "start": "node app",
+    "update-db": "node update.js"
   },
   "author": "santiago murillo",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.6.5",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",

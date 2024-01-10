@@ -1,15 +1,26 @@
-// models/UserFinance.js
 const mongoose = require('mongoose');
 
 const userFinanceSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, 
-  userName: String, 
-  plan: String, 
-  startDate: Date, 
-  endDate: Date, 
-  otherConsumptions: [{ type: String }], 
-  otherConsumptionsAmounts: [{ type: Number }]
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  Active:String,
+  FirstName:String,
+  LastName:String,
+  IdentificationNumber:String,
+  Plan: String,
+  Phone:String,
+  startDate: String,
+  endDate: String,
+  reservationCount: Number,
+  totalAmount: Number,
+  pendingBalance: Number,
+  otherConsumption:Number,
+  totalConsumption: Number,
+  reservationPaymentStatus: String,
+  waterPaymentStatus: String,
+  preWorkoutPaymentStatus: String,
+  numWaters: Number,
+  numPreWorkouts: Number
+
 });
 
 module.exports = mongoose.model('UserFinance', userFinanceSchema);
-

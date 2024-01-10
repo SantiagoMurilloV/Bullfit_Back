@@ -45,7 +45,7 @@ exports.getUserById = (req, res) => {
 
 
 exports.createUser = (req, res) => {
-  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate } = req.body;
+  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate ,registrationDate} = req.body;
   let { endDate } = req.body;
 
   const errors = validationResult(req);
@@ -65,7 +65,8 @@ exports.createUser = (req, res) => {
     Phone,
     IdentificationNumber,
     startDate,
-    endDate
+    endDate,
+    registrationDate
   });
 
   newUser.save()
