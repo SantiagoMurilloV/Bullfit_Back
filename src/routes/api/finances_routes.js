@@ -4,7 +4,7 @@ const financesController = require('../../controllers/finances_controllers');
 
 router.post('/finances', financesController.financesUser);
 router.put('/finances/:userId',financesController.updateUserFinance);
-router.get('/:userId', financesController.getAllUsersFinances);
+router.get('/finances', financesController.getAllUsersFinances);
 router.get('/finances/:userId', financesController.getUserFinance);
 router.delete('/finances/:userId', financesController.deleteUsers);
 

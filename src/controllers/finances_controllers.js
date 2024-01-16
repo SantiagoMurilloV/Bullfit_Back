@@ -28,7 +28,8 @@ exports.financesUser = async (req, res) => {
     waterPaymentStatus: 'No',
     preWorkoutPaymentStatus: 'No',
     numWaters: 0,
-    numPreWorkouts: 0
+    numPreWorkouts: 0,
+    news:''
   });
 
   newUserFinance.save()
@@ -47,7 +48,7 @@ exports.updateUserFinance = async (req, res) => {
   const {
     reservationCount, totalAmount, reservationPaymentStatus, 
     numWaters, waterPaymentStatus, numPreWorkouts, 
-    preWorkoutPaymentStatus, pendingBalance,otherConsumption, totalConsumption
+    preWorkoutPaymentStatus, pendingBalance,otherConsumption, totalConsumption,news
   } = req.body;
 
   try {
@@ -56,7 +57,7 @@ exports.updateUserFinance = async (req, res) => {
       {
         reservationCount, totalAmount, reservationPaymentStatus, 
         numWaters, waterPaymentStatus, numPreWorkouts, 
-        preWorkoutPaymentStatus, pendingBalance,otherConsumption, totalConsumption
+        preWorkoutPaymentStatus, pendingBalance,otherConsumption, totalConsumption,news
       },
       { new: true }
     );
