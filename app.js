@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const usersRoutes = require('./src/routes/api/users_routes');
 const reservationsRoutes = require('./src/routes/api/reservations_routes');
 const financeRoutes = require('./src/routes/api/finances_routes')
+const storeRoutes= require('./src/routes/api/store_routes')
 const cors = require('cors');
 
 
@@ -27,6 +28,7 @@ app.use(cors());
 app.use('/api', usersRoutes);
 app.use('/api', reservationsRoutes);
 app.use('/api', financeRoutes);
+app.use('/api', storeRoutes);
 
 app.listen(PORT, () => {
   console.log('Servidor Express en ejecución en el puerto' + PORT);

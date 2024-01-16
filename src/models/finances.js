@@ -13,14 +13,9 @@ const userFinanceSchema = new mongoose.Schema({
   reservationCount: Number,
   totalAmount: Number,
   pendingBalance: Number,
-  otherConsumption:Number,
   totalConsumption: Number,
   reservationPaymentStatus: String,
-  waterPaymentStatus: String,
-  preWorkoutPaymentStatus: String,
-  numWaters: Number,
-  numPreWorkouts: Number
-
+  news:String
 });
 
 module.exports = mongoose.model('UserFinance', userFinanceSchema);
