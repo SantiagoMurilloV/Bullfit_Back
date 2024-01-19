@@ -7,13 +7,19 @@ exports.createStoreConsumption = async (req, res) => {
   const userId = name.value;
   const userName = name.label; 
 
+    const currentDate = new Date();
+    const dateOfPurchase = currentDate.toLocaleDateString(); 
+    const purchaseTime = currentDate.toLocaleTimeString(); 
+
   const newConsumption = new UserStore({
     userId, 
     name: userName, 
     item,
     quantity,
     value,
-    paymentStatus,
+    paymentStatus:'No',
+    dateOfPurchase,
+    purchaseTime
   });
 
   try {
@@ -69,6 +75,21 @@ exports.getStoreConsumption = async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener el consumo de tienda' });
   }
+};
+
+exports.getStoreConsumption = (req, res) => {
+  const userId = req.params.userId;
+
+  UserStore.find({ userId: userId })
+    .then((consumptions) => {
+      if (consumptions.length === 0) {
+        return res.status(404).json({ message: 'No consumption data found for the specified user' });
+      }
+      res.json(consumptions);
+    })
+    .catch((error) => {
+      res.status(500).json({ error: 'Error fetching user consumption data' });
+    });
 };
 
 

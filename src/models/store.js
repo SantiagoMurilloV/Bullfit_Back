@@ -6,8 +6,9 @@ const userStoreSchema = new mongoose.Schema({
   item:String,
   quantity:Number,
   value:Number,
-  paymentStatus:String
-
+  paymentStatus:String,
+  dateOfPurchase:String,
+  purchaseTime:String
 });
 
 module.exports = mongoose.model('UserStore', userStoreSchema);

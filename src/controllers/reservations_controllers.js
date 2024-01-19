@@ -2,6 +2,7 @@
 const { validationResult } = require('express-validator');
 const Reservation = require('../models/reservations');
 const User = require('../models/users');
+const Slot = require('../models/quotaLimits'); 
 
 
 exports.getAllReservations = async (req, res) => {
@@ -14,6 +15,7 @@ exports.getAllReservations = async (req, res) => {
           reservation: '$reservations',
           userId: 1,
           day: 1,
+          dayOfWeek:1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -33,6 +35,7 @@ exports.getAllReservations = async (req, res) => {
         $project: {
           _id: 1,
           day: 1,
+          dayOfWeek:1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -63,6 +66,7 @@ exports.getAllReservationsId = async (req, res) => {
           reservation: '$reservations',
           userId: 1,
           day: 1,
+          dayOfWeek:1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -82,6 +86,7 @@ exports.getAllReservationsId = async (req, res) => {
         $project: {
           _id: 1,
           day: 1,
+          dayOfWeek:1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -147,18 +152,45 @@ exports.getUserReservations_ = (req, res) => {
 };
 
 
+// exports.createReservation = async (req, res) => {
+//   try {
+//     const { userId, day, hour, Attendance } = req.body;
+//     const newReservation = new Reservation({
+//       userId,
+//       day,
+//       hour,
+//       Attendance : 'Si'
+//     });
+//     const savedReservation = await newReservation.save();
+//     res.status(201).json(savedReservation);
+//   } catch (error) {
+
+//     console.error(error);
+//     res.status(500).json({ error: 'Error al guardar la reserva' });
+//   }
+// };
 exports.createReservation = async (req, res) => {
   try {
-    const { userId, day, hour } = req.body;
+    const { userId, day, dayOfWeek,hour } = req.body;
+
+    const slot = await Slot.findOne({ day, hour });
+    if (slot) {
+      const existingReservationsCount = await Reservation.countDocuments({ day, hour });
+
+      if (existingReservationsCount >= slot.slots) {
+        return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
+      }
+    }
     const newReservation = new Reservation({
       userId,
       day,
-      hour
+      dayOfWeek,
+      hour,
+      Attendance: 'Si'
     });
     const savedReservation = await newReservation.save();
     res.status(201).json(savedReservation);
   } catch (error) {
-
     console.error(error);
     res.status(500).json({ error: 'Error al guardar la reserva' });
   }
