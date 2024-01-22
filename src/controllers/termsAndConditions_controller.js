@@ -13,23 +13,25 @@ const storage = new Storage({
     keyFilename: '../../bullfit-termsandconditions-firebase.json',
 });
 
-
 exports.createTermsAndConditions = async (req, res) => {
     try {
         const { userId, document, agreement } = req.body;
+        const fileName = `pdfs/${userId}termsConditions.pdf`;
+        const publicUrl = `https://firebasestorage.googleapis.com/v0/b/bullfit-termsandconditions.appspot.com/o/${encodeURIComponent(fileName)}?alt=media`;
 
         const newTerms = new TermsAndConditions({
             userId,
             document,
-            agreement
+            agreement,
+            link: publicUrl 
         });
 
         await newTerms.save();
 
+        res.status(201).json({ message: 'Enlace del PDF enviado', link: publicUrl });
 
         const browser = await puppeteer.launch();
         const page = await browser.newPage();
-
 
         await page.setContent(document);
 
@@ -38,7 +40,7 @@ exports.createTermsAndConditions = async (req, res) => {
 
         const storage = admin.storage();
         const bucket = storage.bucket('gs://bullfit-termsandconditions.appspot.com');
-        const file = bucket.file(`pdfs/${userId}.pdf`);
+        const file = bucket.file(fileName);
 
         const fileStream = file.createWriteStream({
             metadata: {
@@ -48,18 +50,31 @@ exports.createTermsAndConditions = async (req, res) => {
 
         fileStream.on('error', (err) => {
             console.error('Error al subir el PDF a Firebase Storage:', err);
-            res.status(500).send('Error al subir el PDF a Firebase Storage');
         });
 
         fileStream.on('finish', () => {
-            res.status(201).json({ message: 'PDF subido exitosamente' });
+            console.log('PDF subido exitosamente');
         });
 
         fileStream.end(pdfBuffer);
     } catch (error) {
+        console.error('Error:', error.message);
         res.status(400).send(error.message);
     }
 };
+
+exports.getTermsAndConditionsAll = (req, res) => {
+    TermsAndConditions.find()
+      .then((users) => {
+        res.json(users);
+      })
+      .catch((error) => {
+        res.status(500).json({ error: 'Error al obtener la información de los usuarios' });
+      });
+  };
+
+
+
 exports.getTermsAndConditions = async (req, res) => {
     try {
         const { userId } = req.params;
