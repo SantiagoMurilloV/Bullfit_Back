@@ -13,7 +13,11 @@ const TermsAndConditionsSchema = new mongoose.Schema({
     agreement: {
         type: Boolean,
         default: false
+    },
+    link: {  
+        type: String
     }
+
 });
 
 const TermsAndConditions = mongoose.model('TermsAndConditions', TermsAndConditionsSchema);
