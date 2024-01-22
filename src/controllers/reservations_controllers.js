@@ -152,23 +152,6 @@ exports.getUserReservations_ = (req, res) => {
 };
 
 
-// exports.createReservation = async (req, res) => {
-//   try {
-//     const { userId, day, hour, Attendance } = req.body;
-//     const newReservation = new Reservation({
-//       userId,
-//       day,
-//       hour,
-//       Attendance : 'Si'
-//     });
-//     const savedReservation = await newReservation.save();
-//     res.status(201).json(savedReservation);
-//   } catch (error) {
-
-//     console.error(error);
-//     res.status(500).json({ error: 'Error al guardar la reserva' });
-//   }
-// };
 exports.createReservation = async (req, res) => {
   try {
     const { userId, day, dayOfWeek,hour } = req.body;
