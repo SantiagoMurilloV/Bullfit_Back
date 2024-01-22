@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "bullfit-termsandconditions",
+  "private_key_id": "fd5a8d9f07967882fbacb39b573a5d9fa7e850ee",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC5cMdZ0R6mnpsA\nhKr7eYu6diFObYLc1mH7qkkrlqpOx44fEYSpPNSi265nEQ0B236tMv/9l3sG5hnv\n2YAKGu+1bTzFP5UpaF0ConpzrwrEDwUhrhtw9yQrJiGGlbNNvhqkmUdeS3/hymZ4\n9psV2uUyxv69VdI+V9zB6yXP5AvmtaudCDVM6pjS2u7mNWoNcuSqm/BQd5NpYG6c\nNCxxvEalBpUpwM3zTTF7Ev8U0b8RPsuqdJldnWqIoiRKvhLKTL3Sq3B/uLu+TJtD\nFnwaa8HeQ6xpvRLWsEIigXZKrAyj0CmQd95WDn4PQy57Dv+zWivQthqJ4sSAGRF1\narNuvc7hAgMBAAECggEAVOAVnjpkuQZnE3mleKxNE+71l5vwBXvqJPHvw4+WK7CS\nkA3Ill1NRa0eyfW36l24QTXSjRNEMAgpXupB/F4P0Q5Kfk13zBgEWixbt48qckod\noyi5Tp8PYuB0/9CM3MxiDWxKihIsWf/1nu/gU8R4myERfz9El1xHokoqaFiMSe+d\nDhejnqPWPVfGDuie1EwMoHLRpluLXsBzeqh02j0jYbuhHGdC7cVQPOAGQ77vYO9B\n7ip89eeXpGscnXsHbS/nB2YyCrNg4fIJu8D/VT+NoY0ag1/czQiD17Bke6erPl9X\niXDRSqHABfVsGGI7lhVmEj2bCxPIGJf9syHu+r4fcQKBgQDkP45Kg7h+QYh0hsCq\nDsfWbqM4F4gua8aID3CdSTMv9f/8xSGwezC9xPtECw6Pc7bhvC7s19dLTYZnvFLQ\n4P2JTPo6l2fElJahEuUEwrHeJGb9PaqFsYyuj+O7r8A7+s22a/nCFtsTDsmxVsWL\nTM7tukrzoLN5jkL6mo26/yYYswKBgQDP/Mq09xToi6wYVxHE+JnpFobrjkUIHbE7\nWyDCg0qIv30ZBjokFUenRmQsNQn+1VuliljVLWub+HtZEs8I5jVlI/qpusxgo0A9\nDJBpU7UV7vUO5AVw3wrr4rxZYUuMD0x6gnif/VtnqKjazPn7YQoQPlQZFEba3eYm\nDcQQ33P8GwKBgGECGinVXf5bP/G2rAAbFBgxIbHfXoPMTq7ZURWoXNcPiOMXrb/i\nO88L/3bl9CRIG/xJDPCgs+JPasaAJfqdBWTrkJaCbxn/xR1keG3TieFOO296XBVC\nZvZyNWo5wkw7xl63+YjiSe4JpPN4W7FezbwAJ4bwUBdjvVfhhEdr1fc9AoGAM5vg\nmMLutz1hOLDyQdQGLOZgGDc3PepQPhBAssNtTT1mxzzaVHXLT+CRnr6Sel9q3ErV\n/B/HIe6ofNPD98tX2H7zBgbKC/i2Se/CLcCNoKGowUcnaniN9zZN0kfoPRrWuVeC\nowB1G+Wn8JMIPK45lwpAR/DWHB0PrMWhryYjW50CgYEApppvcz9I9HQDaXJGtA3J\nk25rWvLc+Mg89CsaXJMNSLJ2EPkaK0joHLWFS2gJoOrHlj69kczYiSyvQ5TnH0cr\n2oVsnf4tkhu7DAUN9KHd1PtJ9hCqBLjdLicrUF6Sx/3Snec7rlQVHivzl5g15Mkt\nbieFqnGGtfrPyypojE4eAWg=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-61rbm@bullfit-termsandconditions.iam.gserviceaccount.com",
+  "client_id": "105506619368344484854",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-61rbm%40bullfit-termsandconditions.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

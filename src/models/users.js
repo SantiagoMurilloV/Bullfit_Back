@@ -8,8 +8,6 @@ const userSchema = new mongoose.Schema({
   Plan: String,
   IdentificationNumber: String,
   Phone: String,
-  startDate:String,
-  endDate:String,
   registrationDate:String, 
 });
 

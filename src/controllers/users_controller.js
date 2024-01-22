@@ -45,16 +45,12 @@ exports.getUserById = (req, res) => {
 
 
 exports.createUser = (req, res) => {
-  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate ,registrationDate} = req.body;
-  let { endDate } = req.body;
+  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber ,registrationDate} = req.body;
+
 
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
-  }
-
-  if (!endDate) {
-    endDate = '';
   }
 
   const newUser = new User({
@@ -64,8 +60,6 @@ exports.createUser = (req, res) => {
     LastName,
     Phone,
     IdentificationNumber,
-    startDate,
-    endDate,
     registrationDate
   });
 
@@ -82,12 +76,12 @@ exports.createUser = (req, res) => {
 
 exports.updateUserStatus = async (req, res) => {
   const userId = req.params.userId;
-  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate, endDate } = req.body;
+  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber} = req.body;
 
   try {
     const user = await User.findByIdAndUpdate(
       userId,
-      { Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate, endDate },
+      { Active, Plan, FirstName, LastName, Phone, IdentificationNumber},
       { new: true }
     );
 

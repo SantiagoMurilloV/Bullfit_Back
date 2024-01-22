@@ -22,13 +22,8 @@ exports.financesUser = async (req, res) => {
     reservationCount: 0,
     totalAmount: 0,
     pendingBalance: 0,
-    otherConsumption:0,
     totalConsumption: 0,
     reservationPaymentStatus: 'No',
-    waterPaymentStatus: 'No',
-    preWorkoutPaymentStatus: 'No',
-    numWaters: 0,
-    numPreWorkouts: 0,
     news:''
   });
 
@@ -44,23 +39,25 @@ exports.financesUser = async (req, res) => {
 
 
 exports.updateUserFinance = async (req, res) => {
-  const userId = req.params.userId;
-  const {
-    reservationCount, totalAmount, reservationPaymentStatus, 
-    numWaters, waterPaymentStatus, numPreWorkouts, 
-    preWorkoutPaymentStatus, pendingBalance,otherConsumption, totalConsumption,news
-  } = req.body;
+  const id = req.params.userId;
+  const updateData = req.body;
 
   try {
-    const updatedFinance = await UserFinance.findOneAndUpdate(
-      { userId },
-      {
-        reservationCount, totalAmount, reservationPaymentStatus, 
-        numWaters, waterPaymentStatus, numPreWorkouts, 
-        preWorkoutPaymentStatus, pendingBalance,otherConsumption, totalConsumption,news
-      },
-      { new: true }
-    );
+    let updatedFinance;
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      updatedFinance = await UserFinance.findByIdAndUpdate(
+        id,
+        { $set: updateData },
+        { new: true }
+      );
+    } else {
+
+      updatedFinance = await UserFinance.findOneAndUpdate(
+        { userId: id },
+        { $set: updateData },
+        { new: true }
+      );
+    }
 
     if (!updatedFinance) {
       return res.status(404).json({ message: 'Finanzas del usuario no encontradas' });
@@ -71,6 +68,7 @@ exports.updateUserFinance = async (req, res) => {
     res.status(500).json({ message: 'Error al actualizar las finanzas del usuario', error });
   }
 };
+
 
 exports.getAllUsersFinances = (req, res) => {
   UserFinance .find()
