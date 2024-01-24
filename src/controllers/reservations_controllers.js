@@ -3,7 +3,7 @@ const { validationResult } = require('express-validator');
 const Reservation = require('../models/reservations');
 const User = require('../models/users');
 const Slot = require('../models/quotaLimits'); 
-
+const Counter = require('../models/counter')
 
 exports.getAllReservations = async (req, res) => {
   try {
@@ -152,18 +152,39 @@ exports.getUserReservations_ = (req, res) => {
 };
 
 
+// exports.createReservation = async (req, res) => {
+//   try {
+//     const { userId, day, dayOfWeek,hour } = req.body;
+
+//     const slot = await Slot.findOne({ day, hour });
+//     if (slot) {
+//       const existingReservationsCount = await Reservation.countDocuments({ day, hour });
+
+//       if (existingReservationsCount >= slot.slots) {
+//         return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
+//       }
+//     }
+//     const newReservation = new Reservation({
+//       userId,
+//       day,
+//       dayOfWeek,
+//       hour,
+//       Attendance: 'Si'
+//     });
+//     const savedReservation = await newReservation.save();
+//     res.status(201).json(savedReservation);
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ error: 'Error al guardar la reserva' });
+//   }
+// };
+
+
+
 exports.createReservation = async (req, res) => {
   try {
-    const { userId, day, dayOfWeek,hour } = req.body;
+    const { userId, day, dayOfWeek, hour } = req.body;
 
-    const slot = await Slot.findOne({ day, hour });
-    if (slot) {
-      const existingReservationsCount = await Reservation.countDocuments({ day, hour });
-
-      if (existingReservationsCount >= slot.slots) {
-        return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
-      }
-    }
     const newReservation = new Reservation({
       userId,
       day,
@@ -172,12 +193,151 @@ exports.createReservation = async (req, res) => {
       Attendance: 'Si'
     });
     const savedReservation = await newReservation.save();
+
+    // Encuentra o crea un contador para el usuario y la fecha formateada
+    const counter = await Counter.findOne({ userId, date: day });
+
+    if (counter) {
+      // Si el contador existe, incrementa el conteo
+      counter.count += 1;
+      await counter.save();
+    } else {
+      // Si no existe, crea uno nuevo
+      const newCounter = new Counter({
+        userId,
+        reservationId: savedReservation._id,
+        date: savedReservation.day,
+        count: 1
+      });
+      await newCounter.save();
+    }
+
+
     res.status(201).json(savedReservation);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al guardar la reserva' });
   }
 };
+
+exports.getMonthlyCounts = async (req, res) => {
+  const currentYear = new Date().getFullYear().toString();
+
+  try {
+    const pipeline = [
+      {
+        $match: {
+          date: { $regex: `^${currentYear}-` }
+        }
+      },
+      {
+        $addFields: {
+          month: { $substr: ['$date', 5, 2] } 
+        }
+      },
+      {
+        $group: {
+          _id: { userId: "$userId", month: "$month" },
+          count: { $sum: "$count" }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.userId",
+          monthlyCounts: { $push: { k: "$_id.month", v: "$count" } }
+        }
+      },
+      {
+        $project: {
+          userId: "$_id",
+          monthlyCounts: { $arrayToObject: "$monthlyCounts" }
+        }
+      },
+      {
+        $addFields: {
+          counts: {
+            $mergeObjects: [
+              { "01": 0, "02": 0, "03": 0, "04": 0, "05": 0, "06": 0, "07": 0, "08": 0, "09": 0, "10": 0, "11": 0, "12": 0 },
+              "$monthlyCounts"
+            ]
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          userId: 1,
+          counts: 1
+        }
+      }
+    ];
+
+    const results = await Counter.aggregate(pipeline);
+    res.status(200).json(results);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener los conteos mensuales' });
+  }
+};
+
+
+
+exports.testCounterData = async (req, res) => {
+  try {
+    const results = await Counter.aggregate([
+      { $limit: 10 } 
+    ]);
+
+    res.status(200).json(results);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener los datos de prueba' });
+  }
+};
+
+exports.testCounterDataByYear = async (req, res) => {
+  const currentYear = new Date().getFullYear().toString();
+
+  try {
+    const results = await Counter.aggregate([
+      {
+        $match: {
+          date: { $regex: `^${currentYear}-` } 
+        }
+      }
+    ]);
+
+    res.status(200).json(results);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al filtrar los datos por año' });
+  }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 exports.getUserReservations = (req, res) => {
   const userId = req.params.userId;

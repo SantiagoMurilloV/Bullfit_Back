@@ -3,9 +3,11 @@ const router = express.Router();
 const financesController = require('../../controllers/finances_controllers');
 
 router.post('/finances', financesController.financesUser);
-router.put('/finances/:userId',financesController.updateUserFinance);
+router.put('/userFinance/:userId', financesController.updateFinanceByUserId);
+router.put('/finance/:financeId', financesController.updateFinanceById);
 router.get('/finances', financesController.getAllUsersFinances);
 router.get('/finances/:userId', financesController.getUserFinance);
 router.delete('/finances/:userId', financesController.deleteUsers);
+
 
 module.exports = router;

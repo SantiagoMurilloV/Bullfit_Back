@@ -8,4 +8,5 @@ router.get('/reservationsid/:userId', reservationsControllers.getAllReservations
 router.post('/reservations', reservationsControllers.createReservation);
 router.put('/reservations/:reservationId', reservationsControllers.updateUserTrainingType);
 router.delete('/reservations/:reservationId', reservationsControllers.deleteReservation);
+router.get('/counter',reservationsControllers.getMonthlyCounts)
 module.exports = router;

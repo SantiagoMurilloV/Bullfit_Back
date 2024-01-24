@@ -23,6 +23,9 @@ exports.financesUser = async (req, res) => {
     totalAmount: 0,
     pendingBalance: 0,
     totalConsumption: 0,
+    numberPaidReservations:0,
+    paymentDate: '',
+    paymentTime: '',
     reservationPaymentStatus: 'No',
     news:''
   });
@@ -37,27 +40,17 @@ exports.financesUser = async (req, res) => {
     });
 };
 
-
-exports.updateUserFinance = async (req, res) => {
-  const id = req.params.userId;
+//userId--------------------------------------------------
+exports.updateFinanceByUserId = async (req, res) => {
+  const userId = req.params.userId;
   const updateData = req.body;
 
   try {
-    let updatedFinance;
-    if (id.match(/^[0-9a-fA-F]{24}$/)) {
-      updatedFinance = await UserFinance.findByIdAndUpdate(
-        id,
-        { $set: updateData },
-        { new: true }
-      );
-    } else {
-
-      updatedFinance = await UserFinance.findOneAndUpdate(
-        { userId: id },
-        { $set: updateData },
-        { new: true }
-      );
-    }
+    const updatedFinance = await UserFinance.findOneAndUpdate(
+      { userId: userId },
+      { $set: updateData },
+      { new: true }
+    );
 
     if (!updatedFinance) {
       return res.status(404).json({ message: 'Finanzas del usuario no encontradas' });
@@ -69,6 +62,33 @@ exports.updateUserFinance = async (req, res) => {
   }
 };
 
+//_id------------------------------------------------------------------------------------
+exports.updateFinanceById = async (req, res) => {
+  const financeId = req.params.financeId;
+  const updateData = req.body;
+
+  if (updateData.reservationPaymentStatus === 'Si') {
+    const now = new Date();
+    updateData.paymentDate = now.toLocaleDateString('es-CO'); 
+    updateData.paymentTime = now.toLocaleTimeString('es-CO'); 
+  }
+
+  try {
+    const updatedFinance = await UserFinance.findByIdAndUpdate(
+      financeId,
+      { $set: updateData },
+      { new: true }
+    );
+
+    if (!updatedFinance) {
+      return res.status(404).json({ message: 'Finanzas del usuario no encontradas' });
+    }
+
+    res.json(updatedFinance);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar las finanzas del usuario', error });
+  }
+};
 
 exports.getAllUsersFinances = (req, res) => {
   UserFinance .find()
