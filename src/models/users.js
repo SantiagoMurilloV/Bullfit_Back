@@ -9,6 +9,9 @@ const userSchema = new mongoose.Schema({
   IdentificationNumber: String,
   Phone: String,
   registrationDate:String, 
+  nameEmergency:String,
+  LastNameEmergency:String,
+  PhoneEmergency:String
 });
 
 module.exports = mongoose.model('users', userSchema);

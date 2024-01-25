@@ -45,7 +45,10 @@ exports.getUserById = (req, res) => {
 
 
 exports.createUser = (req, res) => {
-  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber ,registrationDate} = req.body;
+  const { 
+    Active, Plan, FirstName, LastName, Phone, IdentificationNumber, registrationDate, 
+    nameEmergency, LastNameEmergency, PhoneEmergency 
+  } = req.body;
 
 
   const errors = validationResult(req);
@@ -60,7 +63,11 @@ exports.createUser = (req, res) => {
     LastName,
     Phone,
     IdentificationNumber,
-    registrationDate
+    registrationDate,
+    registrationDate,
+    nameEmergency,
+    LastNameEmergency,
+    PhoneEmergency
   });
 
   newUser.save()
@@ -76,12 +83,16 @@ exports.createUser = (req, res) => {
 
 exports.updateUserStatus = async (req, res) => {
   const userId = req.params.userId;
-  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber} = req.body;
+  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber,registrationDatenameEmergency,
+    LastNameEmergency,
+    PhoneEmergency} = req.body;
 
   try {
     const user = await User.findByIdAndUpdate(
       userId,
-      { Active, Plan, FirstName, LastName, Phone, IdentificationNumber},
+      { Active, Plan, FirstName, LastName, Phone, IdentificationNumber,registrationDatenameEmergency,
+        LastNameEmergency,
+        PhoneEmergency},
       { new: true }
     );
 

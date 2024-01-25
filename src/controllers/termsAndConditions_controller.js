@@ -16,7 +16,7 @@ const storage = new Storage({
 exports.createTermsAndConditions = async (req, res) => {
     try {
         const { userId, document, agreement } = req.body;
-        const fileName = `pdfs/${userId}termsConditions.pdf`;
+        const fileName = `pdfs/${userId}.pdf`;
         const publicUrl = `https://firebasestorage.googleapis.com/v0/b/bullfit-termsandconditions.appspot.com/o/${encodeURIComponent(fileName)}?alt=media`;
 
         const newTerms = new TermsAndConditions({

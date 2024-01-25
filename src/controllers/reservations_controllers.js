@@ -152,32 +152,7 @@ exports.getUserReservations_ = (req, res) => {
 };
 
 
-// exports.createReservation = async (req, res) => {
-//   try {
-//     const { userId, day, dayOfWeek,hour } = req.body;
 
-//     const slot = await Slot.findOne({ day, hour });
-//     if (slot) {
-//       const existingReservationsCount = await Reservation.countDocuments({ day, hour });
-
-//       if (existingReservationsCount >= slot.slots) {
-//         return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
-//       }
-//     }
-//     const newReservation = new Reservation({
-//       userId,
-//       day,
-//       dayOfWeek,
-//       hour,
-//       Attendance: 'Si'
-//     });
-//     const savedReservation = await newReservation.save();
-//     res.status(201).json(savedReservation);
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ error: 'Error al guardar la reserva' });
-//   }
-// };
 
 
 
@@ -356,22 +331,32 @@ exports.getUserReservations = (req, res) => {
 
 exports.deleteReservation = (req, res) => {
   const reservationId = req.params.reservationId;
-  Reservation.findOneAndDelete({ _id: reservationId })
-    .then((deletedReservation) => {
-      if (!deletedReservation) {
 
-        return res.status(404).json({ error: 'Reserva no encontrada' });
+  Promise.all([
+    Reservation.findOneAndDelete({ _id: reservationId }),
+    Counter.findOneAndDelete({ reservationId: reservationId })
+  ])
+  .then(([deletedReservation, deletedCounter]) => {
+    if (!deletedReservation && !deletedCounter) {
+      return res.status(404).json({ error: 'Reserva no encontrada' });
+    }
 
-      }
-      res.status(200).json({ message: 'Reserva eliminada con éxito', deletedReservation });
+    let response = { message: 'Proceso de eliminación completado' };
+    if (deletedReservation) {
+      response.deletedReservation = deletedReservation;
+    }
+    if (deletedCounter) {
+      response.deletedCounter = deletedCounter;
+    }
 
-    })
-    .catch((error) => {
-      console.error(error);
-      res.status(500).json({ error: 'Error al eliminar la reserva' });
-
-    });
+    res.status(200).json(response);
+  })
+  .catch((error) => {
+    console.error(error);
+    res.status(500).json({ error: 'Error al eliminar la reserva' });
+  });
 };
+
 
 
 
