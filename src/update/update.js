@@ -2,7 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 require('dotenv').config({ path: '../../.env' });
 
-const financeData = JSON.parse(fs.readFileSync('./bullfit_db_dev.userfinances.json', 'utf-8'));
+const financeData = JSON.parse(fs.readFileSync('./bullfit_db_dev.users--.json', 'utf-8'));
 const anotherData = JSON.parse(fs.readFileSync('./bullfit_db_dev.users.json', 'utf-8'));
 
 const financeApiUrl = 'http://localhost:8084/api/finances';
