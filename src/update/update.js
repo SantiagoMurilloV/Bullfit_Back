@@ -2,20 +2,35 @@ const axios = require('axios');
 const fs = require('fs');
 require('dotenv').config({ path: '../../.env' });
 
-// Leer el archivo JSON
-const financeData = JSON.parse(fs.readFileSync('./bullfit_db_dev.users.json', 'utf-8'));
+const financeData = JSON.parse(fs.readFileSync('./bullfit_db_dev.userfinances.json', 'utf-8'));
+const anotherData = JSON.parse(fs.readFileSync('./bullfit_db_dev.users.json', 'utf-8'));
 
-const apiUrl = 'http://localhost:8084/api/finances'; 
+const financeApiUrl = 'http://localhost:8084/api/finances';
+// const anotherApiUrl = 'http://localhost:8084/api/users';
 
-const postData = async () => {
+const postFinanceData = async () => {
   try {
     for (const item of financeData) {
-      const response = await axios.post(apiUrl, item);
-      console.log('Datos publicados:', response.data);
+      const response = await axios.post(financeApiUrl, item);
+      console.log('Finance Data posted:', response.data);
     }
   } catch (error) {
-    console.error('Error al publicar datos:', error);
+    console.error('Error posting finance data:', error);
   }
 };
 
-postData();
+// const postAnotherData = async () => {
+//   try {
+//     for (const item of anotherData) {
+//       const response = await axios.post(anotherApiUrl, item);
+//       console.log('Another Data posted:', response.data);
+//     }
+//   } catch (error) {
+//     console.error('Error posting another data:', error);
+//   }
+// };
+
+postFinanceData();
+
+// postAnotherData();
+
