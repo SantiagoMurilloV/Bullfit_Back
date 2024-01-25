@@ -7,9 +7,21 @@ exports.createStoreConsumption = async (req, res) => {
   const userId = name.value;
   const userName = name.label; 
 
-    const currentDate = new Date();
-    const dateOfPurchase = currentDate.toLocaleDateString(); 
-    const purchaseTime = currentDate.toLocaleTimeString(); 
+  const currentDate = new Date();
+  const formattedDate = currentDate.getFullYear() + '-' +
+    String(currentDate.getMonth() + 1).padStart(2, '0') + '-' +
+    String(currentDate.getDate()).padStart(2, '0');
+
+    const options = {
+      timeZone: 'America/Bogota',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    };
+    const purchaseTime = currentDate.toLocaleTimeString('en-US', options);
+  
+
 
   const newConsumption = new UserStore({
     userId, 
@@ -18,7 +30,7 @@ exports.createStoreConsumption = async (req, res) => {
     quantity,
     value,
     paymentStatus:'No',
-    dateOfPurchase,
+    dateOfPurchase: formattedDate, 
     purchaseTime
   });
 

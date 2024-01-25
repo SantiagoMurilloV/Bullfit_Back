@@ -3,7 +3,7 @@ const UserFinance = require('../models/finances');
 
 exports.financesUser = async (req, res) => {
   
-  const { userId, Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate } = req.body;
+  const { userId, Active, Plan, FirstName, LastName, Phone, IdentificationNumber,startDate } = req.body;
   let { endDate } = req.body;
 
   if (!endDate) {
@@ -40,7 +40,7 @@ exports.financesUser = async (req, res) => {
     });
 };
 
-//userId--------------------------------------------------
+
 exports.updateFinanceByUserId = async (req, res) => {
   const userId = req.params.userId;
   const updateData = req.body;
@@ -53,7 +53,7 @@ exports.updateFinanceByUserId = async (req, res) => {
     );
 
     if (!updatedFinance) {
-      return res.status(404).json({ message: 'Finanzas del usuario no encontradas' });
+      return res.status(404).json({ message: 'Finanzas ---del usuario no encontradas' });
     }
 
     res.json(updatedFinance);
@@ -62,7 +62,7 @@ exports.updateFinanceByUserId = async (req, res) => {
   }
 };
 
-//_id------------------------------------------------------------------------------------
+
 exports.updateFinanceById = async (req, res) => {
   const financeId = req.params.financeId;
   const updateData = req.body;
