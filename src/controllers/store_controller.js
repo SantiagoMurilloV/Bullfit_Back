@@ -5,7 +5,7 @@ exports.createStoreConsumption = async (req, res) => {
 
   const { name, item, quantity, value, paymentStatus } = req.body;
   const userId = name.value;
-  const userName = name.label; 
+
 
   const currentDate = new Date();
   const formattedDate = currentDate.getFullYear() + '-' +
@@ -25,7 +25,7 @@ exports.createStoreConsumption = async (req, res) => {
 
   const newConsumption = new UserStore({
     userId, 
-    name: userName, 
+    name, 
     item,
     quantity,
     value,
