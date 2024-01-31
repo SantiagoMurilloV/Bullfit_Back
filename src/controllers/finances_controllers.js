@@ -9,6 +9,14 @@ exports.financesUser = async (req, res) => {
   if (!endDate) {
     endDate = '';
   }
+
+  let pendingBalance = 0;
+  if (Plan === 'Mensual') {
+    pendingBalance = 125000;
+  } else if (Plan === 'Diario') {
+    pendingBalance = 0;
+  }
+
   const newUserFinance = new UserFinance({
     userId, 
     Active,
@@ -21,7 +29,7 @@ exports.financesUser = async (req, res) => {
     endDate,
     reservationCount: 0,
     totalAmount: 0,
-    pendingBalance: 0,
+    pendingBalance,
     totalConsumption: 0,
     numberPaidReservations:0,
     paymentDate: '',

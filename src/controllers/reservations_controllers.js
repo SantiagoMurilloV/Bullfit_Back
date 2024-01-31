@@ -4,6 +4,9 @@ const Reservation = require('../models/reservations');
 const User = require('../models/users');
 const Slot = require('../models/quotaLimits'); 
 const Counter = require('../models/counter')
+const UserFinance = require('../models/finances'); 
+const mongoose = require('mongoose');
+const moment = require('moment');
 
 exports.getAllReservations = async (req, res) => {
   try {
@@ -154,8 +157,6 @@ exports.getUserReservations_ = (req, res) => {
 
 
 
-
-
 exports.createReservation = async (req, res) => {
   try {
     const { userId, day, dayOfWeek, hour } = req.body;
@@ -169,15 +170,11 @@ exports.createReservation = async (req, res) => {
     });
     const savedReservation = await newReservation.save();
 
-    // Encuentra o crea un contador para el usuario y la fecha formateada
     const counter = await Counter.findOne({ userId, date: day });
-
     if (counter) {
-      // Si el contador existe, incrementa el conteo
       counter.count += 1;
       await counter.save();
     } else {
-      // Si no existe, crea uno nuevo
       const newCounter = new Counter({
         userId,
         reservationId: savedReservation._id,
@@ -187,6 +184,27 @@ exports.createReservation = async (req, res) => {
       await newCounter.save();
     }
 
+    const userFinances = await UserFinance.find({
+      userId: new mongoose.Types.ObjectId(userId),
+    });
+
+    const reservationDate = moment(day, 'YYYY-MM-DD');
+    for (let finance of userFinances) {
+      const startDate = moment(finance.startDate, 'YYYY-MM-DD');
+      const endDate = startDate.clone().add(30, 'days');
+      if (reservationDate.isSameOrAfter(startDate) && reservationDate.isBefore(endDate)) {
+        finance.reservationCount = (finance.reservationCount || 0) + 1;
+
+        if (finance.Plan === 'Mensual') {
+          finance.pendingBalance = 125000;
+        } else if (finance.Plan === 'Diario') {
+          finance.pendingBalance = finance.reservationCount * 10000;
+        }
+
+        await finance.save();
+        break; 
+      }
+    }
 
     res.status(201).json(savedReservation);
   } catch (error) {
@@ -194,6 +212,9 @@ exports.createReservation = async (req, res) => {
     res.status(500).json({ error: 'Error al guardar la reserva' });
   }
 };
+
+
+
 
 exports.getMonthlyCounts = async (req, res) => {
   const currentYear = new Date().getFullYear().toString();
