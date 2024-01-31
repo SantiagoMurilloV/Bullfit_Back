@@ -2,9 +2,9 @@
 const { validationResult } = require('express-validator');
 const Reservation = require('../models/reservations');
 const User = require('../models/users');
-const Slot = require('../models/quotaLimits'); 
+const Slot = require('../models/quotaLimits');
 const Counter = require('../models/counter')
-const UserFinance = require('../models/finances'); 
+const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 
@@ -18,7 +18,7 @@ exports.getAllReservations = async (req, res) => {
           reservation: '$reservations',
           userId: 1,
           day: 1,
-          dayOfWeek:1,
+          dayOfWeek: 1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -38,7 +38,7 @@ exports.getAllReservations = async (req, res) => {
         $project: {
           _id: 1,
           day: 1,
-          dayOfWeek:1,
+          dayOfWeek: 1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -69,7 +69,7 @@ exports.getAllReservationsId = async (req, res) => {
           reservation: '$reservations',
           userId: 1,
           day: 1,
-          dayOfWeek:1,
+          dayOfWeek: 1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -89,7 +89,7 @@ exports.getAllReservationsId = async (req, res) => {
         $project: {
           _id: 1,
           day: 1,
-          dayOfWeek:1,
+          dayOfWeek: 1,
           hour: 1,
           TrainingType: 1,
           Status: 1,
@@ -202,7 +202,7 @@ exports.createReservation = async (req, res) => {
         }
 
         await finance.save();
-        break; 
+        break;
       }
     }
 
@@ -228,7 +228,7 @@ exports.getMonthlyCounts = async (req, res) => {
       },
       {
         $addFields: {
-          month: { $substr: ['$date', 5, 2] } 
+          month: { $substr: ['$date', 5, 2] }
         }
       },
       {
@@ -281,7 +281,7 @@ exports.getMonthlyCounts = async (req, res) => {
 exports.testCounterData = async (req, res) => {
   try {
     const results = await Counter.aggregate([
-      { $limit: 10 } 
+      { $limit: 10 }
     ]);
 
     res.status(200).json(results);
@@ -298,7 +298,7 @@ exports.testCounterDataByYear = async (req, res) => {
     const results = await Counter.aggregate([
       {
         $match: {
-          date: { $regex: `^${currentYear}-` } 
+          date: { $regex: `^${currentYear}-` }
         }
       }
     ]);
@@ -350,35 +350,52 @@ exports.getUserReservations = (req, res) => {
     });
 };
 
-exports.deleteReservation = (req, res) => {
+
+
+
+exports.deleteReservation = async (req, res) => {
   const reservationId = req.params.reservationId;
 
-  Promise.all([
-    Reservation.findOneAndDelete({ _id: reservationId }),
-    Counter.findOneAndDelete({ reservationId: reservationId })
-  ])
-  .then(([deletedReservation, deletedCounter]) => {
-    if (!deletedReservation && !deletedCounter) {
+  try {
+    const deletedReservation = await Reservation.findOneAndDelete({ _id: reservationId });
+    await Counter.findOneAndDelete({ reservationId: reservationId });
+
+    if (!deletedReservation) {
       return res.status(404).json({ error: 'Reserva no encontrada' });
     }
 
-    let response = { message: 'Proceso de eliminación completado' };
-    if (deletedReservation) {
-      response.deletedReservation = deletedReservation;
+    const userFinances = await UserFinance.find({
+      userId: new mongoose.Types.ObjectId(deletedReservation.userId),
+    });
+
+    const reservationDate = moment(deletedReservation.day, 'YYYY-MM-DD');
+    for (let finance of userFinances) {
+      const startDate = moment(finance.startDate, 'YYYY-MM-DD');
+      const endDate = startDate.clone().add(30, 'days');
+      if (reservationDate.isSameOrAfter(startDate) && reservationDate.isBefore(endDate)) {
+        finance.reservationCount = Math.max((finance.reservationCount || 0) - 1, 0);
+
+        if (finance.Plan === 'Mensual') {
+          finance.pendingBalance = 125000;
+        } else if (finance.Plan === 'Diario') {
+          finance.pendingBalance = finance.reservationCount * 10000;
+        }
+
+        await finance.save();
+        break;
+      }
     }
-    if (deletedCounter) {
-      response.deletedCounter = deletedCounter;
-    }
+    let response = {
+      message: 'Proceso de eliminación completado',
+      deletedReservation: deletedReservation
+    };
 
     res.status(200).json(response);
-  })
-  .catch((error) => {
+  } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al eliminar la reserva' });
-  });
+  }
 };
-
-
 
 
 
