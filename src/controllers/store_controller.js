@@ -3,34 +3,30 @@ const UserStore = require('../models/store');
 
 exports.createStoreConsumption = async (req, res) => {
 
-  const { name, item, quantity, value, paymentStatus } = req.body;
-  const userId = name.value;
-
+  const { userId, name, item, quantity, value, paymentStatus } = req.body;
 
   const currentDate = new Date();
   const formattedDate = currentDate.getFullYear() + '-' +
     String(currentDate.getMonth() + 1).padStart(2, '0') + '-' +
     String(currentDate.getDate()).padStart(2, '0');
 
-    const options = {
-      timeZone: 'America/Bogota',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    };
-    const purchaseTime = currentDate.toLocaleTimeString('en-US', options);
-  
-
+  const options = {
+    timeZone: 'America/Bogota',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  };
+  const purchaseTime = currentDate.toLocaleTimeString('en-US', options);
 
   const newConsumption = new UserStore({
-    userId, 
-    name, 
+    userId,
+    name,
     item,
     quantity,
     value,
-    paymentStatus:'No',
-    dateOfPurchase: formattedDate, 
+    paymentStatus: 'No',
+    dateOfPurchase: formattedDate,
     purchaseTime
   });
 
@@ -52,16 +48,16 @@ exports.updateStoreConsumption = async (req, res) => {
       consumptionId,
       { userId, item, quantity, value, paymentStatus },
       { new: true }
-      );
+    );
 
     if (!updatedConsumption) {
       return res.status(404).json({ message: 'Consumo de tienda no encontrado' });
     }
 
     res.json(updatedConsumption);
-    } catch (error) {
+  } catch (error) {
     res.status(500).json({ message: 'Error al actualizar el consumo de tienda', error });
-    }
+  }
 };
 
 exports.getAllStoreConsumptions = async (req, res) => {
