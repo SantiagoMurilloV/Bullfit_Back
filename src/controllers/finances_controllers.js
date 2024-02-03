@@ -112,7 +112,7 @@ exports.getAllUsersFinances = (req, res) => {
 exports.getUserFinance = (req, res) => {
   const userId = req.params.userId;
 
-  UserFinance.findOne({ userId: userId })
+  UserFinance.find({ userId: userId })
     .then((userFinance) => {
       if (!userFinance) {
         return res.status(404).json({ message: 'Datos financieros no encontrados para el usuario especificado' });
@@ -127,6 +127,21 @@ exports.getUserFinance = (req, res) => {
 exports.deleteUsers = (req, res) => {
   const userId = req.params.userId; 
   UserFinance.findOneAndDelete({ userId: userId }) 
+    .then((deletedUser) => {
+      if (!deletedUser) {
+        return res.status(404).json({ error: 'Usuario no encontrado' });
+      }
+      res.status(200).json({ message: 'Usuario eliminado con éxito', deletedUser });
+    })
+    .catch((error) => {
+      console.error(error);
+      res.status(500).json({ error: 'Error al eliminar usuario' });
+    });
+};
+
+exports.deleteFiance = (req, res) => {
+  const financeId = req.params.financeId;
+  UserFinance.findOneAndDelete({ _id: financeId }) 
     .then((deletedUser) => {
       if (!deletedUser) {
         return res.status(404).json({ error: 'Usuario no encontrado' });

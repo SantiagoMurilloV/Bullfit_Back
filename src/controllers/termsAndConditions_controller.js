@@ -1,75 +1,59 @@
 const TermsAndConditions = require('../models/termsAndConditions');
-const puppeteer = require('puppeteer');
 const admin = require('firebase-admin');
 const serviceAccount = require('../../bullfit-termsandconditions-firebase.json');
-const { Storage } = require('@google-cloud/storage');
+const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
 
-
-// Inicializa Firebase solo si aún no se ha hecho
 if (admin.apps.length === 0) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
     });
 }
+const pdfDirectory = path.join(__dirname, 'pdfs');
 
+if (!fs.existsSync(pdfDirectory)) {
+    fs.mkdirSync(pdfDirectory, { recursive: true });
+}
 exports.createTermsAndConditions = async (req, res) => {
     try {
-        const { userId, document, agreement } = req.body;
+        const { userId, document: htmlContent, agreement } = req.body;
         const fileName = `pdfs/${userId}.pdf`;
+        const filePath = path.join(__dirname, fileName);
+        const browser = await puppeteer.launch();
+        const page = await browser.newPage();
+
+        await page.setContent(htmlContent);
+        await page.pdf({ path: filePath });
+
+        await browser.close();
+
+        const bucket = admin.storage().bucket('bullfit-termsandconditions.appspot.com');
+        await bucket.upload(filePath, {
+            destination: fileName,
+            metadata: {
+                contentType: 'application/pdf',
+            },
+        });
+
+        fs.unlinkSync(filePath);
+
         const publicUrl = `https://firebasestorage.googleapis.com/v0/b/bullfit-termsandconditions.appspot.com/o/${encodeURIComponent(fileName)}?alt=media`;
 
         const newTerms = new TermsAndConditions({
-            userId,
-            document,
-            agreement,
+            userId, 
+            agreement, 
+            document: htmlContent,
             link: publicUrl
         });
-
-
-        await newTerms.save();
-
-
-        const browser = await puppeteer.launch({
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-            headless: true
-        });
-        const page = await browser.newPage();
-        await page.setContent(document);
-
-        const pdfBuffer = await page.pdf({ format: 'A4' });
-        await browser.close();
-
-
-        const bucket = admin.storage().bucket('bullfit-termsandconditions.appspot.com');
-        const file = bucket.file(fileName);
-
-        await new Promise((resolve, reject) => {
-            const fileStream = file.createWriteStream({
-                metadata: {
-                    contentType: 'application/pdf',
-                },
-            });
-
-            fileStream.on('error', err => {
-                console.error('Error al subir el PDF a Firebase Storage:', err);
-                reject(err);
-            });
-
-            fileStream.on('finish', () => {
-                console.log('PDF subido exitosamente');
-                resolve();
-            });
-
-            fileStream.end(pdfBuffer);
-        });
-
-
-        res.status(201).json({ message: 'Enlace del PDF enviado', link: publicUrl });
-    } catch (error) {
-        console.error('Error:', error.message);
-        res.status(400).send(error.message);
-    }
+            await newTerms.save();
+            res.status(201).json({ message: 'Términos y condiciones creados', link: publicUrl });
+        } catch (dbError) {
+            console.error('Error al guardar en la base de datos:', dbError);
+            res.status(500).send(dbError.message);
+        }
 };
+
 
 
 exports.getTermsAndConditionsAll = (req, res) => {
