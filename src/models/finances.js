@@ -13,6 +13,7 @@ const userFinanceSchema = new mongoose.Schema({
   reservationCount: Number,
   totalAmount: Number,
   pendingBalance: Number,
+  pendingPayment:Number,
   totalConsumption: Number,
   numberPaidReservations:Number,
   paymentDate: String,

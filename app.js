@@ -6,11 +6,18 @@ const usersRoutes = require('./src/routes/api/users_routes');
 const reservationsRoutes = require('./src/routes/api/reservations_routes');
 const financeRoutes = require('./src/routes/api/finances_routes')
 const storeRoutes= require('./src/routes/api/store_routes')
-// const notification = require('./src/routes/api/twilio_route')
+// const notification = require('./helpers/twilio_route')
 const slot = require('./src/routes/api/quotaLimits_routes')
 const cors = require('cors');
 const termsAndConditionsRoutes = require('./src/routes/api/termsAndConditions_routes');
+const cron = require('node-cron');
+const { updateDailyPlanStartDate } = require('./src/controllers/finances_controllers');
 
+
+cron.schedule('0 0 1 * *', () => {
+  console.log('Ejecutando la actualización de la fecha de inicio para usuarios de Plan Diario...');
+  updateDailyPlanStartDate();
+});
 dotenv.config();
 
 app.use(express.json());

@@ -99,9 +99,9 @@ exports.createTermsAndConditions = async (req, res) => {
             }
         });
 
-        fileStream.on('error', (err) => {
-            console.error('Error al subir el PDF a Firebase Storage:', err);
-        });
+        // fileStream.on('error', (err) => {
+        //     console.error('Error al subir el PDF a Firebase Storage:', err);
+        // });
 
         fileStream.on('finish', () => {
             console.log('PDF subido exitosamente');

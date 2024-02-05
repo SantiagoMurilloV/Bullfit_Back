@@ -30,6 +30,7 @@ exports.financesUser = async (req, res) => {
     reservationCount: 0,
     totalAmount: 0,
     pendingBalance,
+    pendingPayment:0,
     totalConsumption: 0,
     numberPaidReservations:0,
     paymentDate: '',
@@ -47,6 +48,23 @@ exports.financesUser = async (req, res) => {
       res.status(500).json({ error: 'Error al crear el usuario', details: error.message });
     });
 };
+
+exports.updateDailyPlanStartDate = async () => {
+  const firstDayOfMonth = new Date();
+  firstDayOfMonth.setDate(1); //firts Day of Month
+  const formattedDate = firstDayOfMonth.toISOString().split('T')[0]; // Format YYYY-MM-DD
+
+  try {
+    const result = await UserFinance.updateMany(
+      { Plan: 'Diario' },
+      { $set: { startDate: formattedDate } }
+    );
+    console.log('Fecha de inicio actualizada para usuarios de Plan Diario:', result);
+  } catch (error) {
+    console.error('Error al actualizar la fecha de inicio para usuarios de Plan Diario:', error);
+  }
+};
+
 
 
 exports.updateFinanceByUserId = async (req, res) => {
