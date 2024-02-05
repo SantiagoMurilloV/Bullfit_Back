@@ -199,6 +199,7 @@ exports.createReservation = async (req, res) => {
           finance.pendingBalance = 125000;
         } else if (finance.Plan === 'Diario') {
           finance.pendingBalance = finance.reservationCount * 10000;
+          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
         }
 
         await finance.save();
@@ -379,6 +380,7 @@ exports.deleteReservation = async (req, res) => {
           finance.pendingBalance = 125000;
         } else if (finance.Plan === 'Diario') {
           finance.pendingBalance = finance.reservationCount * 10000;
+          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
         }
 
         await finance.save();
