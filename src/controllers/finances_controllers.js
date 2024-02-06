@@ -50,18 +50,43 @@ exports.financesUser = async (req, res) => {
 };
 
 exports.updateDailyPlanStartDate = async () => {
-  const firstDayOfMonth = new Date();
-  firstDayOfMonth.setDate(1); //firts Day of Month
-  const formattedDate = firstDayOfMonth.toISOString().split('T')[0]; // Format YYYY-MM-DD
+  const startOfMonth = moment().startOf('month').format('YYYY-MM-DD');
+  const endOfMonth = moment().endOf('month').format('YYYY-MM-DD');
 
   try {
-    const result = await UserFinance.updateMany(
-      { Plan: 'Diario' },
-      { $set: { startDate: formattedDate } }
-    );
-    console.log('Fecha de inicio actualizada para usuarios de Plan Diario:', result);
+    const financesToUpdate = await UserFinance.find({
+      Plan: 'Diario',
+      startDate: {
+        $gte: startOfMonth,
+        $lte: endOfMonth
+      }
+    });
+    const promises = financesToUpdate.map(finance => {
+      const newFinanceEntry = new UserFinance({
+        ...finance.toObject(),
+        _id: undefined, // Asegúrate de quitar el ID para crear un nuevo documento.
+        startDate: moment().add(1, 'months').startOf('month').format('YYYY-MM-DD'), 
+        endDate: '', 
+        reservationCount: 0,
+        totalAmount: 0,
+        pendingBalance:0,
+        pendingPayment:0,
+        totalConsumption: 0,
+        numberPaidReservations:0,
+        paymentDate: '',
+        paymentTime: '',
+        reservationPaymentStatus: 'No',
+        news:''
+      });
+
+      return newFinanceEntry.save();
+    });
+
+    await Promise.all(promises);
+
+    console.log('Finanzas de Plan Diario actualizadas para el nuevo mes.');
   } catch (error) {
-    console.error('Error al actualizar la fecha de inicio para usuarios de Plan Diario:', error);
+    console.error('Error al actualizar las finanzas de Plan Diario:', error);
   }
 };
 

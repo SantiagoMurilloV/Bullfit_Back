@@ -168,7 +168,7 @@ exports.createReservation = async (req, res) => {
       hour,
       Attendance: 'Si'
     });
-    const savedReservation = await newReservation.save();
+    const savedReservation = await newReservation.save(); 
 
     const counter = await Counter.findOne({ userId, date: day });
     if (counter) {

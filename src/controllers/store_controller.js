@@ -1,23 +1,13 @@
 const UserStore = require('../models/store');
+const moment = require('moment-timezone');
 
 
 exports.createStoreConsumption = async (req, res) => {
-
   const { userId, name, item, quantity, value, paymentStatus } = req.body;
 
-  const currentDate = new Date();
-  const formattedDate = currentDate.getFullYear() + '-' +
-    String(currentDate.getMonth() + 1).padStart(2, '0') + '-' +
-    String(currentDate.getDate()).padStart(2, '0');
-
-  const options = {
-    timeZone: 'America/Bogota',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true
-  };
-  const purchaseTime = currentDate.toLocaleTimeString('en-US', options);
+  const bogotaTime = moment.tz(new Date(), 'America/Bogota');
+  const formattedDate = bogotaTime.format('YYYY-MM-DD');
+  const purchaseTime = bogotaTime.format('hh:mm:ss A');
 
   const newConsumption = new UserStore({
     userId,
@@ -37,8 +27,6 @@ exports.createStoreConsumption = async (req, res) => {
     res.status(500).json({ error: 'Error al crear el consumo de tienda', details: error.message });
   }
 };
-
-
 exports.updateStoreConsumption = async (req, res) => {
   const consumptionId = req.params.id;
   const { userId, item, quantity, value, paymentStatus } = req.body;
