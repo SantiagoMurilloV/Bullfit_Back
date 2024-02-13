@@ -1,9 +1,9 @@
-const UserFinance = require('../models/finances'); 
+const UserFinance = require('../models/finances');
 
 
 exports.financesUser = async (req, res) => {
-  
-  const { userId, Active, Plan, FirstName, LastName, Phone, IdentificationNumber,startDate } = req.body;
+
+  const { userId, Active, Plan, FirstName, LastName, Phone, IdentificationNumber, startDate } = req.body;
   let { endDate } = req.body;
 
   if (!endDate) {
@@ -18,7 +18,7 @@ exports.financesUser = async (req, res) => {
   }
 
   const newUserFinance = new UserFinance({
-    userId, 
+    userId,
     Active,
     FirstName,
     LastName,
@@ -30,13 +30,13 @@ exports.financesUser = async (req, res) => {
     reservationCount: 0,
     totalAmount: 0,
     pendingBalance,
-    pendingPayment:0,
+    pendingPayment: 0,
     totalConsumption: 0,
-    numberPaidReservations:0,
+    numberPaidReservations: 0,
     paymentDate: '',
     paymentTime: '',
     reservationPaymentStatus: 'No',
-    news:''
+    news: ''
   });
 
   newUserFinance.save()
@@ -65,18 +65,18 @@ exports.updateDailyPlanStartDate = async () => {
       const newFinanceEntry = new UserFinance({
         ...finance.toObject(),
         _id: undefined, // Asegúrate de quitar el ID para crear un nuevo documento.
-        startDate: moment().add(1, 'months').startOf('month').format('YYYY-MM-DD'), 
-        endDate: '', 
+        startDate: moment().add(1, 'months').startOf('month').format('YYYY-MM-DD'),
+        endDate: '',
         reservationCount: 0,
         totalAmount: 0,
-        pendingBalance:0,
-        pendingPayment:0,
+        pendingBalance: 0,
+        pendingPayment: 0,
         totalConsumption: 0,
-        numberPaidReservations:0,
+        numberPaidReservations: 0,
         paymentDate: '',
         paymentTime: '',
         reservationPaymentStatus: 'No',
-        news:''
+        news: ''
       });
 
       return newFinanceEntry.save();
@@ -120,8 +120,8 @@ exports.updateFinanceById = async (req, res) => {
 
   if (updateData.reservationPaymentStatus === 'Si') {
     const now = new Date();
-    updateData.paymentDate = now.toLocaleDateString('es-CO'); 
-    updateData.paymentTime = now.toLocaleTimeString('es-CO'); 
+    updateData.paymentDate = now.toLocaleDateString('es-CO');
+    updateData.paymentTime = now.toLocaleTimeString('es-CO');
   }
 
   try {
@@ -142,7 +142,7 @@ exports.updateFinanceById = async (req, res) => {
 };
 
 exports.getAllUsersFinances = (req, res) => {
-  UserFinance .find()
+  UserFinance.find()
     .then((users) => {
       res.json(users);
     })
@@ -168,8 +168,8 @@ exports.getUserFinance = (req, res) => {
 };
 
 exports.deleteUsers = (req, res) => {
-  const userId = req.params.userId; 
-  UserFinance.findOneAndDelete({ userId: userId }) 
+  const userId = req.params.userId;
+  UserFinance.findOneAndDelete({ userId: userId })
     .then((deletedUser) => {
       if (!deletedUser) {
         return res.status(404).json({ error: 'Usuario no encontrado' });
@@ -184,7 +184,7 @@ exports.deleteUsers = (req, res) => {
 
 exports.deleteFiance = (req, res) => {
   const financeId = req.params.financeId;
-  UserFinance.findOneAndDelete({ _id: financeId }) 
+  UserFinance.findOneAndDelete({ _id: financeId })
     .then((deletedUser) => {
       if (!deletedUser) {
         return res.status(404).json({ error: 'Usuario no encontrado' });
