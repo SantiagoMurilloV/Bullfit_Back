@@ -154,9 +154,6 @@ exports.getUserReservations_ = (req, res) => {
     });
 };
 
-
-
-
 exports.createReservation = async (req, res) => {
   try {
     const { userId, day, dayOfWeek, hour } = req.body;
@@ -168,7 +165,7 @@ exports.createReservation = async (req, res) => {
       hour,
       Attendance: 'Si'
     });
-    const savedReservation = await newReservation.save(); 
+    const savedReservation = await newReservation.save();
 
     const counter = await Counter.findOne({ userId, date: day });
     if (counter) {
@@ -197,7 +194,7 @@ exports.createReservation = async (req, res) => {
 
         if (finance.Plan === 'Mensual') {
           finance.pendingBalance = 125000;
-        } else if (finance.Plan === 'Diario') {
+        } else if (finance.Plan === 'Diario' && finance.reservationPaymentStatus === 'No') {
           finance.pendingBalance = finance.reservationCount * 10000;
           finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
         }
@@ -213,9 +210,6 @@ exports.createReservation = async (req, res) => {
     res.status(500).json({ error: 'Error al guardar la reserva' });
   }
 };
-
-
-
 
 exports.getMonthlyCounts = async (req, res) => {
   const currentYear = new Date().getFullYear().toString();
@@ -311,31 +305,6 @@ exports.testCounterDataByYear = async (req, res) => {
   }
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 exports.getUserReservations = (req, res) => {
   const userId = req.params.userId;
 
@@ -350,9 +319,6 @@ exports.getUserReservations = (req, res) => {
       res.status(500).json({ error: 'Error al obtener las reservas del usuario' });
     });
 };
-
-
-
 
 exports.deleteReservation = async (req, res) => {
   const reservationId = req.params.reservationId;

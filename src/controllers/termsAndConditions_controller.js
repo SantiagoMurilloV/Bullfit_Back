@@ -74,7 +74,7 @@ exports.createTermsAndConditions = async (req, res) => {
             userId,
             document,
             agreement,
-            link: publicUrl 
+            link: publicUrl
         });
 
         await newTerms.save();
