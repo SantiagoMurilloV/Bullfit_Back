@@ -11,13 +11,7 @@ const slot = require('./src/routes/api/quotaLimits_routes')
 const cors = require('cors');
 const termsAndConditionsRoutes = require('./src/routes/api/termsAndConditions_routes');
 const cron = require('node-cron');
-const { updateDailyPlanStartDate } = require('./src/controllers/finances_controllers');
 
-
-cron.schedule('0 0 1 * *', () => {
-  console.log('Ejecutando la actualización de la fecha de inicio para usuarios de Plan Diario...');
-  updateDailyPlanStartDate();
-});
 dotenv.config();
 
 app.use(express.json());

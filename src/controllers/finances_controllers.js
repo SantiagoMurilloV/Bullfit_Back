@@ -64,7 +64,7 @@ exports.updateDailyPlanStartDate = async () => {
     const promises = financesToUpdate.map(finance => {
       const newFinanceEntry = new UserFinance({
         ...finance.toObject(),
-        _id: undefined, // Asegúrate de quitar el ID para crear un nuevo documento.
+        _id: undefined, 
         startDate: moment().add(1, 'months').startOf('month').format('YYYY-MM-DD'),
         endDate: '',
         reservationCount: 0,
