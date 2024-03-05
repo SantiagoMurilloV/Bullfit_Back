@@ -194,7 +194,7 @@ exports.createReservation = async (req, res) => {
 
         if (finance.Plan === 'Mensual') {
           finance.pendingBalance = 125000;
-        } else if (finance.Plan === 'Diario' && finance.reservationPaymentStatus === 'No') {
+        } else if (finance.Plan === 'Diario' && finance.reservationPaymentStatus !== 'Si') {
           finance.pendingBalance = finance.reservationCount * 10000;
           finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
         }
