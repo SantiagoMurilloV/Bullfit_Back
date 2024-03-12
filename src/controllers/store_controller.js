@@ -3,7 +3,7 @@ const moment = require('moment-timezone');
 
 
 exports.createStoreConsumption = async (req, res) => {
-  const { userId, name, item, quantity, value, paymentStatus } = req.body;
+  const { userId, name, item, quantity, value, paymentStatus , news} = req.body;
 
   const bogotaTime = moment.tz(new Date(), 'America/Bogota');
   const formattedDate = bogotaTime.format('YYYY-MM-DD');
@@ -11,6 +11,7 @@ exports.createStoreConsumption = async (req, res) => {
 
   const newConsumption = new UserStore({
     userId,
+    news:'',
     name,
     item,
     quantity,
@@ -29,12 +30,12 @@ exports.createStoreConsumption = async (req, res) => {
 };
 exports.updateStoreConsumption = async (req, res) => {
   const consumptionId = req.params.id;
-  const { userId, item, quantity, value, paymentStatus } = req.body;
+  const { userId, item, quantity, value, paymentStatus, news } = req.body;
 
   try {
     const updatedConsumption = await UserStore.findByIdAndUpdate(
       consumptionId,
-      { userId, item, quantity, value, paymentStatus },
+      { userId, item, quantity, value, paymentStatus , news},
       { new: true }
     );
 
