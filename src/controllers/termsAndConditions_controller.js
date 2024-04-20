@@ -131,16 +131,16 @@ exports.getTermsAndConditionsAll = (req, res) => {
 exports.getTermsAndConditions = async (req, res) => {
     try {
         const { userId } = req.params;
-
         const terms = await TermsAndConditions.findOne({ userId });
 
         if (!terms) {
-            return res.status(404).send('Terms and Conditions not found for the given user.');
+            return res.status(404).json({ message: 'Terms and Conditions not found for the given user.' });
         }
 
         res.status(200).json(terms);
     } catch (error) {
-        res.status(400).send(error.message);
+        res.status(500).json({ message: 'Failed to retrieve terms and conditions', error: error.message });
     }
 };
+
 
