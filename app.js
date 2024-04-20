@@ -10,7 +10,8 @@ const storeRoutes= require('./src/routes/api/store_routes')
 const slot = require('./src/routes/api/quotaLimits_routes')
 const cors = require('cors');
 const termsAndConditionsRoutes = require('./src/routes/api/termsAndConditions_routes');
-const cron = require('node-cron');
+const pqrs = require('./src/routes/api/pqrs_routes')
+
 
 dotenv.config();
 
@@ -34,7 +35,8 @@ app.use('/api', financeRoutes);
 app.use('/api', storeRoutes);
 app.use('/api', termsAndConditionsRoutes);
 // app.use('/api', notification);
-app.use('/api', slot)
+app.use('/api', slot);
+app.use('/api',pqrs);
 
 
 
