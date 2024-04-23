@@ -80,7 +80,7 @@ exports.getStoreConsumption = (req, res) => {
   UserStore.find({ userId: userId })
     .then((consumptions) => {
       if (consumptions.length === 0) {
-        return res.status(404).json({ message: 'No consumption data found for the specified user' });
+        return res.status(200).json([]);
       }
       res.json(consumptions);
     })
