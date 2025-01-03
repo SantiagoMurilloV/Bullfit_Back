@@ -25,6 +25,7 @@
     "mongodb": "^6.1.0",
     "mongoose": "^7.6.3",
     "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0",
     "nodemon": "^3.0.1",
     "puppeteer": "^10.4.0",
     "twilio": "^4.20.1"
