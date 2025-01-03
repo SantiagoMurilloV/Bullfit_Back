@@ -7,6 +7,11 @@ const Counter = require('../models/counter')
 const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
+const TelegramBot = require('node-telegram-bot-api');
+const TELEGRAM_TOKEN = '8104626358:AAHjNVWdZuY412ngB5EX47ZaxFBH8xip9NY';
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+const ADMIN_CHAT_ID = '2067829989';
+
 
 exports.getAllReservations = async (req, res) => {
   try {
@@ -109,33 +114,55 @@ exports.getAllReservationsId = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener las reservas' });
   }
 };
-exports.updateUserTrainingType = (req, res) => {
+exports.updateUserTrainingType = async(req, res) => {
   const reservationId = req.params.reservationId;
   const { TrainingType, Status, Attendance, hour } = req.body;
 
+  
+  let messageChanges = [];
   const updateFields = {};
+
   if (TrainingType) {
     updateFields.TrainingType = TrainingType;
+    messageChanges.push(`Tipo de entrenamiento actualizado a: ${TrainingType}`);
   }
   if (Status) {
     updateFields.Status = Status;
+    messageChanges.push(`Estado actualizado a: ${Status}`);
   }
   if (Attendance) {
     updateFields.Attendance = Attendance;
+    messageChanges.push(`Asistencia actualizada a: ${Attendance}`);
   }
   if (hour) {
     updateFields.hour = hour;
+    messageChanges.push(`Hora actualizada a: ${hour}`);
   }
-  Reservation.findByIdAndUpdate(reservationId, updateFields, { new: true })
-    .then((updatedReservation) => {
-      if (!updatedReservation) {
-        return res.status(404).json({ error: 'Reserva no encontrada' });
-      }
-      res.status(200).json(updatedReservation);
-    })
-    .catch((err) => {
-      res.status(500).json({ error: 'Error al actualizar la reserva' });
-    });
+
+
+  try {
+    const updatedReservation = await Reservation.findByIdAndUpdate(reservationId, updateFields, { new: true });
+    if (!updatedReservation) {
+      return res.status(404).json({ error: 'Reserva no encontrada' });
+    }
+
+    // Recuperar detalles del usuario
+    const user = await User.findById(updatedReservation.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Detalles del usuario no encontrados' });
+    }
+
+    // Compilar mensaje para Telegram
+    const message = `Actualización de reserva por:
+      - Usuario : ${user.FirstName} ${user.LastName}
+      - Cambios: ${messageChanges.join(', ')}`;
+    await bot.sendMessage(ADMIN_CHAT_ID, message);
+
+    res.status(200).json(updatedReservation);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al actualizar la reserva' });
+  }
 };
 
 
@@ -166,6 +193,33 @@ exports.createReservation = async (req, res) => {
       Attendance: 'Si'
     });
     const savedReservation = await newReservation.save();
+
+    //Envio de notificacion Telegram
+    const userDetails = await Reservation.aggregate([
+      { $match: { _id: savedReservation._id } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'userId',
+          foreignField: '_id',
+          as: 'userDetails'
+        }
+      },
+      { $unwind: '$userDetails' },
+      { $project: { firstName: '$userDetails.FirstName', lastName: '$userDetails.LastName' } }
+    ]);
+
+    if (userDetails.length > 0) {
+      const { firstName, lastName } = userDetails[0];
+      const message = `Nueva reserva creada:
+        - Usuario: ${firstName} ${lastName}
+        - Fecha: ${dayOfWeek}, ${day}
+        - Hora: ${hour}`;
+      await bot.sendMessage(ADMIN_CHAT_ID, message);
+    } else {
+      throw new Error('Detalles del usuario no encontrados.');
+    }
+
 
     const counter = await Counter.findOne({ userId, date: day });
     if (counter) {
@@ -330,6 +384,21 @@ exports.deleteReservation = async (req, res) => {
     if (!deletedReservation) {
       return res.status(404).json({ error: 'Reserva no encontrada' });
     }
+
+    // verificación del usuario directamente sin agregar.
+    const user = await User.findById(deletedReservation.userId);
+    if (!user) {
+      throw new Error('Detalles del usuario no encontrados.');
+    }
+
+    // Mensaje de notificación
+    const message = `Reserva eliminada por:
+      - Usuario: ${user.FirstName} ${user.LastName}
+      - Fecha: ${deletedReservation.dayOfWeek}, ${deletedReservation.day}
+      - Hora: ${deletedReservation.hour}`;
+    await bot.sendMessage(ADMIN_CHAT_ID, message);
+
+    //--------------------------------------------------
 
     const userFinances = await UserFinance.find({
       userId: new mongoose.Types.ObjectId(deletedReservation.userId),
