@@ -8,9 +8,10 @@ const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-const TELEGRAM_TOKEN = '8104626358:AAHjNVWdZuY412ngB5EX47ZaxFBH8xip9NY';
+// const TELEGRAM_TOKEN = '8104626358:AAHjNVWdZuY412ngB5EX47ZaxFBH8xip9NY';
+const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI';
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-const ADMIN_CHAT_ID = '2067829989';
+const ADMIN_CHAT_ID = '6558646628';
 
 
 exports.getAllReservations = async (req, res) => {
