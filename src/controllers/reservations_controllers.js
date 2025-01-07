@@ -8,10 +8,11 @@ const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-// const TELEGRAM_TOKEN = '8104626358:AAHjNVWdZuY412ngB5EX47ZaxFBH8xip9NY';
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI';
+const TELEGRAM_TOKEN = '8104626358:AAHjNVWdZuY412ngB5EX47ZaxFBH8xip9NY';
+// const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI';
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-const ADMIN_CHAT_ID = '6558646628';
+// const ADMIN_CHAT_ID = '6558646628';
+const ADMIN_CHAT_ID = '2067829989';
 
 
 exports.getAllReservations = async (req, res) => {
@@ -115,6 +116,7 @@ exports.getAllReservationsId = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener las reservas' });
   }
 };
+
 exports.updateUserTrainingType = async(req, res) => {
   const reservationId = req.params.reservationId;
   const { TrainingType, Status, Attendance, hour } = req.body;
@@ -123,10 +125,6 @@ exports.updateUserTrainingType = async(req, res) => {
   let messageChanges = [];
   const updateFields = {};
 
-  if (TrainingType) {
-    updateFields.TrainingType = TrainingType;
-    messageChanges.push(`Tipo de entrenamiento actualizado a: ${TrainingType}`);
-  }
   if (Status) {
     updateFields.Status = Status;
     messageChanges.push(`Estado actualizado a: ${Status}`);
@@ -138,6 +136,10 @@ exports.updateUserTrainingType = async(req, res) => {
   if (hour) {
     updateFields.hour = hour;
     messageChanges.push(`Hora actualizada a: ${hour}`);
+  }
+
+  if (TrainingType) {
+    updateFields.TrainingType = TrainingType;
   }
 
 
@@ -154,10 +156,13 @@ exports.updateUserTrainingType = async(req, res) => {
     }
 
     // Compilar mensaje para Telegram
-    const message = `Actualización de reserva por:
-      - Usuario : ${user.FirstName} ${user.LastName}
-      - Cambios: ${messageChanges.join(', ')}`;
-    await bot.sendMessage(ADMIN_CHAT_ID, message);
+    if (messageChanges.length > 0) {
+      const message = `Actualización de reserva por:
+        - Usuario : ${user.FirstName} ${user.LastName}
+        - Cambios: ${messageChanges.join(', ')}`;
+      await bot.sendMessage(ADMIN_CHAT_ID, message);
+    }
+
 
     res.status(200).json(updatedReservation);
   } catch (error) {
