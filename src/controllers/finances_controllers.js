@@ -150,6 +150,17 @@ exports.getAllUsersFinances = (req, res) => {
       res.status(500).json({ error: 'Error al obtener la información de los usuarios' });
     });
 };
+exports.getAllDiaryUsersFinances = (req, res) => {
+
+  UserFinance.find({ Plan: 'Diario' })  
+    .then((diaryUsersFinances) => {
+      res.json(diaryUsersFinances);
+    })
+    .catch((error) => {
+      res.status(500).json({ error: 'Error al obtener la información de finanzas de los usuarios diarios' });
+    });
+};
+
 
 
 exports.getUserFinance = (req, res) => {
