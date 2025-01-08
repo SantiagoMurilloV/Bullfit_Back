@@ -151,8 +151,8 @@ exports.getAllUsersFinances = (req, res) => {
     });
 };
 exports.getAllDiaryUsersFinances = (req, res) => {
-  // Filtra las finanzas para obtener solo las que están en el plan 'Diario'
-  UserFinance.find({ Plan: 'Diario' })  // Asumiendo que 'Plan' es el campo correcto en el modelo
+
+  UserFinance.find({ Plan: 'Diario' })  
     .then((diaryUsersFinances) => {
       res.json(diaryUsersFinances);
     })
