@@ -8,10 +8,11 @@ const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-// const TELEGRAM_TOKEN = '8104626358:AAHjNVWdZuY412ngB5EX47ZaxFBH8xip9NY';
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+const TELEGRAM_TOKEN = '8104626358:AAHjNVWdZuY412ngB5EX47ZaxFBH8xip9NY';
+// const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-const ADMIN_CHAT_ID = '6558646628'; 
+// const ADMIN_CHAT_ID = '6558646628';
+const ADMIN_CHAT_ID = '2067829989';
 
 
 
@@ -118,11 +119,11 @@ exports.getAllReservationsId = async (req, res) => {
   }
 };
 
-exports.updateUserTrainingType = async(req, res) => {
+exports.updateUserTrainingType = async (req, res) => {
   const reservationId = req.params.reservationId;
   const { TrainingType, Status, Attendance, hour } = req.body;
 
-  
+
   let messageChanges = [];
   const updateFields = {};
 
@@ -188,9 +189,29 @@ exports.getUserReservations_ = (req, res) => {
     });
 };
 
+
+
+
 exports.createReservation = async (req, res) => {
+  const { userId, day, dayOfWeek, hour } = req.body;
   try {
-    const { userId, day, dayOfWeek, hour } = req.body;
+    const existingReservationsCount = await Reservation.countDocuments({
+      day,
+      hour
+    });
+
+    const slot = await Slot.findOne({
+      day: dayOfWeek,
+      hour: hour
+    });
+
+    if (!slot) {
+      return res.status(404).json({ message: 'No hay información de cupos para este día y hora.' });
+    }
+
+    if (existingReservationsCount >= slot.slots) {
+      return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
+    }
 
     const newReservation = new Reservation({
       userId,
@@ -271,6 +292,7 @@ exports.createReservation = async (req, res) => {
     res.status(500).json({ error: 'Error al guardar la reserva' });
   }
 };
+
 
 exports.getMonthlyCounts = async (req, res) => {
   const currentYear = new Date().getFullYear().toString();
