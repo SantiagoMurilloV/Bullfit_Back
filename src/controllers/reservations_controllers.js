@@ -8,9 +8,9 @@ const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
-const ADMIN_CHAT_ID = '6558646628';
+// const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+// const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// const ADMIN_CHAT_ID = '6558646628';
 
 
 
@@ -188,30 +188,147 @@ exports.getUserReservations_ = (req, res) => {
     });
 };
 
+// exports.createReservation = async (req, res) => {
+//   const { userId, day, dayOfWeek, hour } = req.body;
+//   try {
+//     const existingReservationsCount = await Reservation.countDocuments({
+//       day,
+//       hour
+//     });
+
+//     const slot = await Slot.findOne({
+//       day: dayOfWeek,
+//       hour: hour
+//     });
+
+//     if (!slot) {
+//       return res.status(404).json({ message: 'No hay información de cupos para este día y hora.' });
+//     }
+
+//     if (existingReservationsCount >= slot.slots) {
+//       return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
+//     }
+
+//     const newReservation = new Reservation({
+//       userId,
+//       day,
+//       dayOfWeek,
+//       hour,
+//       Attendance: 'Si'
+//     });
+//     const savedReservation = await newReservation.save();
+
+//     //Envio de notificacion Telegram
+//     const userDetails = await Reservation.aggregate([
+//       { $match: { _id: savedReservation._id } },
+//       {
+//         $lookup: {
+//           from: 'users',
+//           localField: 'userId',
+//           foreignField: '_id',
+//           as: 'userDetails'
+//         }
+//       },
+//       { $unwind: '$userDetails' },
+//       { $project: { firstName: '$userDetails.FirstName', lastName: '$userDetails.LastName' } }
+//     ]);
+
+//     if (userDetails.length > 0) {
+//       const { firstName, lastName } = userDetails[0];
+//       const message = `Nueva reserva creada:
+//         - Usuario: ${firstName} ${lastName}
+//         - Fecha: ${dayOfWeek}, ${day}
+//         - Hora: ${hour}`;
+//       await bot.sendMessage(ADMIN_CHAT_ID, message);
+//     } else {
+//       throw new Error('Detalles del usuario no encontrados.');
+//     }
 
 
+//     const counter = await Counter.findOne({ userId, date: day });
+//     if (counter) {
+//       counter.count += 1;
+//       await counter.save();
+//     } else {
+//       const newCounter = new Counter({
+//         userId,
+//         reservationId: savedReservation._id,
+//         date: savedReservation.day,
+//         count: 1
+//       });
+//       await newCounter.save();
+//     }
+
+//     const userFinances = await UserFinance.find({
+//       userId: new mongoose.Types.ObjectId(userId),
+//     });
+
+//     const reservationDate = moment(day, 'YYYY-MM-DD');
+//     for (let finance of userFinances) {
+//       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
+//       const endDate = startDate.clone().add(30, 'days');
+//       if (reservationDate.isSameOrAfter(startDate) && reservationDate.isBefore(endDate)) {
+//         finance.reservationCount = (finance.reservationCount || 0) + 1;
+
+//         if (finance.Plan === 'Mensual') {
+//           finance.pendingBalance = 125000;
+//         } else if (finance.Plan === 'Diario' && finance.reservationPaymentStatus !== 'Si' && finance.paymentDate === '') {
+//           finance.pendingBalance = finance.reservationCount * 10000;
+//           finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
+//         }
+
+//         await finance.save();
+//         break;
+//       }
+//     }
+
+//     res.status(201).json(savedReservation);
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ error: 'Error al guardar la reserva' });
+//   }
+// };
 
 exports.createReservation = async (req, res) => {
   const { userId, day, dayOfWeek, hour } = req.body;
+
   try {
-    const existingReservationsCount = await Reservation.countDocuments({
-      day,
-      hour
-    });
+    // Validación básica de campos
+    if (!userId || !day || !dayOfWeek || !hour) {
+      return res.status(400).json({ message: 'Faltan campos requeridos' });
+    }
 
-    const slot = await Slot.findOne({
-      day: dayOfWeek,
-      hour: hour
-    });
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'userId inválido' });
+    }
 
+    // Verificar disponibilidad de slots
+    const existingReservationsCount = await Reservation.countDocuments({ day, hour });
+    const slot = await Slot.findOne({ day: dayOfWeek, hour });
     if (!slot) {
-      return res.status(404).json({ message: 'No hay información de cupos para este día y hora.' });
+      return res.status(404).json({
+        code: 'SLOT_NOT_FOUND',
+        message: 'No hay información de cupos para este día y hora.'
+      });
     }
-
+    
+    if (Number(slot.slots) === 0) {
+      return res.status(400).json({
+        code: 'SLOT_UNAVAILABLE',
+        message: 'Hora no disponible para reservas.'
+      });
+    }
+    
     if (existingReservationsCount >= slot.slots) {
-      return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
+      return res.status(400).json({
+        code: 'SLOT_FULL',
+        message: 'No hay cupos disponibles para esta hora.'
+      });
     }
+    
+    
 
+    // Crear nueva reserva
     const newReservation = new Reservation({
       userId,
       day,
@@ -219,9 +336,10 @@ exports.createReservation = async (req, res) => {
       hour,
       Attendance: 'Si'
     });
+
     const savedReservation = await newReservation.save();
 
-    //Envio de notificacion Telegram
+    // Obtener nombre del usuario con agregación
     const userDetails = await Reservation.aggregate([
       { $match: { _id: savedReservation._id } },
       {
@@ -236,61 +354,72 @@ exports.createReservation = async (req, res) => {
       { $project: { firstName: '$userDetails.FirstName', lastName: '$userDetails.LastName' } }
     ]);
 
+    // Notificación por Telegram
     if (userDetails.length > 0) {
       const { firstName, lastName } = userDetails[0];
-      const message = `Nueva reserva creada:
-        - Usuario: ${firstName} ${lastName}
-        - Fecha: ${dayOfWeek}, ${day}
-        - Hora: ${hour}`;
-      await bot.sendMessage(ADMIN_CHAT_ID, message);
-    } else {
-      throw new Error('Detalles del usuario no encontrados.');
+      const message = `*Nueva reserva:*\n
+      - *Usuario:* ${firstName} ${lastName}
+      - *Fecha:* ${dayOfWeek}, ${day}
+      - *Hora:* ${hour}`;
+      try {
+        await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+      } catch (err) {
+        console.error('Error al enviar notificación de Telegram:', err.message);
+      }
     }
 
+    // Actualizar o crear contador de reservas
+    let counter = await Counter.findOne({ userId, date: day });
 
-    const counter = await Counter.findOne({ userId, date: day });
     if (counter) {
       counter.count += 1;
       await counter.save();
     } else {
-      const newCounter = new Counter({
+      counter = new Counter({
         userId,
         reservationId: savedReservation._id,
         date: savedReservation.day,
         count: 1
       });
-      await newCounter.save();
+      await counter.save();
     }
 
-    const userFinances = await UserFinance.find({
-      userId: new mongoose.Types.ObjectId(userId),
-    });
-
+    // Actualizar información financiera del usuario
+    const userFinances = await UserFinance.find({ userId: new mongoose.Types.ObjectId(userId) });
     const reservationDate = moment(day, 'YYYY-MM-DD');
-    for (let finance of userFinances) {
+
+    for (const finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
       const endDate = startDate.clone().add(30, 'days');
+
       if (reservationDate.isSameOrAfter(startDate) && reservationDate.isBefore(endDate)) {
         finance.reservationCount = (finance.reservationCount || 0) + 1;
 
         if (finance.Plan === 'Mensual') {
           finance.pendingBalance = 125000;
-        } else if (finance.Plan === 'Diario' && finance.reservationPaymentStatus !== 'Si' && finance.paymentDate === '') {
+        } else if (
+          finance.Plan === 'Diario' &&
+          finance.reservationPaymentStatus !== 'Si' &&
+          finance.paymentDate === ''
+        ) {
           finance.pendingBalance = finance.reservationCount * 10000;
-          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
+          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000);
         }
 
         await finance.save();
-        break;
+        break; // Solo se actualiza el primer plan válido
       }
     }
 
-    res.status(201).json(savedReservation);
+    // Éxito
+    return res.status(201).json(savedReservation);
+
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Error al guardar la reserva' });
+    console.error('Error al guardar la reserva:', error.message);
+    return res.status(500).json({ message: 'Error interno del servidor al guardar la reserva.' });
   }
 };
+
 
 
 exports.getMonthlyCounts = async (req, res) => {
@@ -420,11 +549,11 @@ exports.deleteReservation = async (req, res) => {
     }
 
     // Mensaje de notificación
-    const message = `Reserva eliminada por:
-      - Usuario: ${user.FirstName} ${user.LastName}
-      - Fecha: ${deletedReservation.dayOfWeek}, ${deletedReservation.day}
-      - Hora: ${deletedReservation.hour}`;
-    await bot.sendMessage(ADMIN_CHAT_ID, message);
+    const message = `*Reserva eliminada por:*
+      - *Usuario:* ${user.FirstName} ${user.LastName}
+      - *Fecha:* ${deletedReservation.dayOfWeek}, ${deletedReservation.day}
+      - *Hora:* ${deletedReservation.hour}`;
+    await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
 
     //--------------------------------------------------
 
