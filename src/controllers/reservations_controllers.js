@@ -8,8 +8,8 @@ const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+// const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
 
 
@@ -188,106 +188,6 @@ exports.getUserReservations_ = (req, res) => {
     });
 };
 
-// exports.createReservation = async (req, res) => {
-//   const { userId, day, dayOfWeek, hour } = req.body;
-//   try {
-//     const existingReservationsCount = await Reservation.countDocuments({
-//       day,
-//       hour
-//     });
-
-//     const slot = await Slot.findOne({
-//       day: dayOfWeek,
-//       hour: hour
-//     });
-
-//     if (!slot) {
-//       return res.status(404).json({ message: 'No hay información de cupos para este día y hora.' });
-//     }
-
-//     if (existingReservationsCount >= slot.slots) {
-//       return res.status(400).json({ message: 'No hay cupos disponibles para esta hora.' });
-//     }
-
-//     const newReservation = new Reservation({
-//       userId,
-//       day,
-//       dayOfWeek,
-//       hour,
-//       Attendance: 'Si'
-//     });
-//     const savedReservation = await newReservation.save();
-
-//     //Envio de notificacion Telegram
-//     const userDetails = await Reservation.aggregate([
-//       { $match: { _id: savedReservation._id } },
-//       {
-//         $lookup: {
-//           from: 'users',
-//           localField: 'userId',
-//           foreignField: '_id',
-//           as: 'userDetails'
-//         }
-//       },
-//       { $unwind: '$userDetails' },
-//       { $project: { firstName: '$userDetails.FirstName', lastName: '$userDetails.LastName' } }
-//     ]);
-
-//     if (userDetails.length > 0) {
-//       const { firstName, lastName } = userDetails[0];
-//       const message = `Nueva reserva creada:
-//         - Usuario: ${firstName} ${lastName}
-//         - Fecha: ${dayOfWeek}, ${day}
-//         - Hora: ${hour}`;
-//       await bot.sendMessage(ADMIN_CHAT_ID, message);
-//     } else {
-//       throw new Error('Detalles del usuario no encontrados.');
-//     }
-
-
-//     const counter = await Counter.findOne({ userId, date: day });
-//     if (counter) {
-//       counter.count += 1;
-//       await counter.save();
-//     } else {
-//       const newCounter = new Counter({
-//         userId,
-//         reservationId: savedReservation._id,
-//         date: savedReservation.day,
-//         count: 1
-//       });
-//       await newCounter.save();
-//     }
-
-//     const userFinances = await UserFinance.find({
-//       userId: new mongoose.Types.ObjectId(userId),
-//     });
-
-//     const reservationDate = moment(day, 'YYYY-MM-DD');
-//     for (let finance of userFinances) {
-//       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
-//       const endDate = startDate.clone().add(30, 'days');
-//       if (reservationDate.isSameOrAfter(startDate) && reservationDate.isBefore(endDate)) {
-//         finance.reservationCount = (finance.reservationCount || 0) + 1;
-
-//         if (finance.Plan === 'Mensual') {
-//           finance.pendingBalance = 125000;
-//         } else if (finance.Plan === 'Diario' && finance.reservationPaymentStatus !== 'Si' && finance.paymentDate === '') {
-//           finance.pendingBalance = finance.reservationCount * 10000;
-//           finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
-//         }
-
-//         await finance.save();
-//         break;
-//       }
-//     }
-
-//     res.status(201).json(savedReservation);
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ error: 'Error al guardar la reserva' });
-//   }
-// };
 
 exports.createReservation = async (req, res) => {
   const { userId, day, dayOfWeek, hour } = req.body;
@@ -326,6 +226,16 @@ exports.createReservation = async (req, res) => {
       });
     }
     
+    const reservationDateTime = moment.tz(`${day} ${hour}`, 'America/Bogota');
+    const now = moment.tz('America/Bogota');
+    const timeDifference = reservationDateTime.diff(now, 'minutes');
+
+    if (existingReservationsCount === 0 && timeDifference < 60) {
+      return res.status(400).json({
+        code: 'TIME_RESTRICTION',
+        message: 'Solo puedes reservar con al menos una hora de antelación si no hay reservas previas.'
+      });
+    }
     
 
     // Crear nueva reserva
