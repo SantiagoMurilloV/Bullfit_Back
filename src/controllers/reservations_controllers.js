@@ -8,8 +8,8 @@ const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+// const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
 
 
@@ -190,7 +190,7 @@ exports.getUserReservations_ = (req, res) => {
 
 
 exports.createReservation = async (req, res) => {
-  const { userId, day, dayOfWeek, hour } = req.body;
+  const { userId, day, dayOfWeek, hour, isAdmin = false  } = req.body;
 
   try {
     // Validación básica de campos
@@ -230,12 +230,13 @@ exports.createReservation = async (req, res) => {
     const now = moment.tz('America/Bogota');
     const timeDifference = reservationDateTime.diff(now, 'minutes');
 
-    if (existingReservationsCount === 0 && timeDifference < 60) {
+    if (!isAdmin && existingReservationsCount === 0 && timeDifference < 60) {
       return res.status(400).json({
         code: 'TIME_RESTRICTION',
         message: 'Solo puedes reservar con al menos una hora de antelación si no hay reservas previas.'
       });
     }
+
     
 
     // Crear nueva reserva
@@ -244,7 +245,8 @@ exports.createReservation = async (req, res) => {
       day,
       dayOfWeek,
       hour,
-      Attendance: 'Si'
+      Attendance: 'Si',
+      isAdmin
     });
 
     const savedReservation = await newReservation.save();

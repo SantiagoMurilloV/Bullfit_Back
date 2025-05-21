@@ -7,7 +7,8 @@ const reservationSchema = new mongoose.Schema({
   hour:{ type: String, required: true },
   TrainingType:String,
   Status:String,
-  Attendance:String
+  Attendance:String,
+  isAdmin:Boolean
 
 });
 
