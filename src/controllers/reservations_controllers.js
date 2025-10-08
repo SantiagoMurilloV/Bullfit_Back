@@ -8,8 +8,8 @@ const UserFinance = require('../models/finances');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+// const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
 
 
@@ -304,7 +304,8 @@ exports.createReservation = async (req, res) => {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
       const endDate = startDate.clone().add(30, 'days');
 
-      if (reservationDate.isSameOrAfter(startDate) && reservationDate.isBefore(endDate)) {
+      // Incluir el día final del período (rango inclusivo)
+      if (reservationDate.isSameOrAfter(startDate) && reservationDate.isSameOrBefore(endDate)) {
         finance.reservationCount = (finance.reservationCount || 0) + 1;
 
         if (finance.Plan === 'Mensual') {
@@ -477,7 +478,8 @@ exports.deleteReservation = async (req, res) => {
     for (let finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
       const endDate = startDate.clone().add(30, 'days');
-      if (reservationDate.isSameOrAfter(startDate) && reservationDate.isBefore(endDate)) {
+      // Incluir el día final del período (rango inclusivo)
+      if (reservationDate.isSameOrAfter(startDate) && reservationDate.isSameOrBefore(endDate)) {
         finance.reservationCount = Math.max((finance.reservationCount || 0) - 1, 0);
 
         if (finance.Plan === 'Mensual') {
