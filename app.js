@@ -30,8 +30,8 @@ db.on('error', (error) => console.error(error));
 db.once('open', () => console.log('Conexión a la base de datos exitosa'));
 
 
-//const allowedOrigins = ['https://bullfit-app-v2-0.vercel.app']; 
-const allowedOrigins = ['http://localhost:3000'];
+const allowedOrigins = ['https://bullfit-app-v2-0.vercel.app', 'http://localhost:3000']; 
+
 
 const corsOptions = {
   origin: function (origin, callback) {
