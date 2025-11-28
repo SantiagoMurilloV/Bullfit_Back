@@ -1,5 +1,6 @@
 const UserStore = require('../models/store');
 const moment = require('moment-timezone');
+const { getPriceValue } = require('../services/priceService');
 
 
 exports.createStoreConsumption = async (req, res) => {
@@ -9,13 +10,28 @@ exports.createStoreConsumption = async (req, res) => {
   const formattedDate = bogotaTime.format('YYYY-MM-DD');
   const purchaseTime = bogotaTime.format('hh:mm:ss A');
 
+  let finalValue = value;
+
+  if (typeof item === 'string' && item.toLowerCase() === 'guestpass') {
+    try {
+      const guestPrice = await getPriceValue({ item: 'guestPass' });
+      finalValue = guestPrice * (Number(quantity) || 0);
+    } catch (error) {
+      const status = error.code === 'PRICE_NOT_FOUND' ? 400 : 500;
+      const message = error.code === 'PRICE_NOT_FOUND'
+        ? error.message
+        : 'Error al obtener el precio del guest pass';
+      return res.status(status).json({ message });
+    }
+  }
+
   const newConsumption = new UserStore({
     userId,
     news:'',
     name,
     item,
     quantity,
-    value,
+    value: finalValue,
     paymentStatus: 'No',
     dateOfPurchase: formattedDate,
     purchaseTime
@@ -33,9 +49,16 @@ exports.updateStoreConsumption = async (req, res) => {
   const { userId, item, quantity, value, paymentStatus, news } = req.body;
 
   try {
+    let finalValue = value;
+
+    if (typeof item === 'string' && item.toLowerCase() === 'guestpass') {
+      const guestPrice = await getPriceValue({ item: 'guestPass' });
+      finalValue = guestPrice * (Number(quantity) || 0);
+    }
+
     const updatedConsumption = await UserStore.findByIdAndUpdate(
       consumptionId,
-      { userId, item, quantity, value, paymentStatus , news},
+      { userId, item, quantity, value: finalValue, paymentStatus , news},
       { new: true }
     );
 
@@ -45,6 +68,9 @@ exports.updateStoreConsumption = async (req, res) => {
 
     res.json(updatedConsumption);
   } catch (error) {
+    if (error.code === 'PRICE_NOT_FOUND') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Error al actualizar el consumo de tienda', error });
   }
 };
@@ -105,4 +131,3 @@ exports.deleteStoreConsumption = async (req, res) => {
     res.status(500).json({ error: 'Error al eliminar el consumo de tienda' });
   }
 };
-

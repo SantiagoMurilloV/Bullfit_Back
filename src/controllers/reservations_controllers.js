@@ -5,11 +5,12 @@ const User = require('../models/users');
 const Slot = require('../models/quotaLimits');
 const Counter = require('../models/counter')
 const UserFinance = require('../models/finances');
+const { getPriceValue } = require('../services/priceService');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+//const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+//const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
 
 
@@ -202,6 +203,28 @@ exports.createReservation = async (req, res) => {
       return res.status(400).json({ message: 'userId inválido' });
     }
 
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const user = await User.findById(userObjectId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const normalizedPlan = (user.Plan || '').trim().toLowerCase();
+    if (normalizedPlan.includes('diario')) {
+      const pendingDailyBalance = await UserFinance.exists({
+        userId: userObjectId,
+        Plan: { $regex: /diario/i },
+        pendingBalance: { $gt: 0 }
+      });
+
+      if (pendingDailyBalance) {
+        return res.status(400).json({
+          code: 'PENDING_BALANCE',
+          message: 'No puedes crear una nueva reserva hasta que tu saldo pendiente sea 0.'
+        });
+      }
+    }
+
     // Verificar disponibilidad de slots
     const existingReservationsCount = await Reservation.countDocuments({ day, hour });
     const slot = await Slot.findOne({ day: dayOfWeek, hour });
@@ -297,8 +320,16 @@ exports.createReservation = async (req, res) => {
     }
 
     // Actualizar información financiera del usuario
-    const userFinances = await UserFinance.find({ userId: new mongoose.Types.ObjectId(userId) });
+    const userFinances = await UserFinance.find({ userId: userObjectId });
     const reservationDate = moment(day, 'YYYY-MM-DD');
+    const priceCache = {};
+
+    const resolvePrice = async (item) => {
+      if (!priceCache[item]) {
+        priceCache[item] = await getPriceValue({ item });
+      }
+      return priceCache[item];
+    };
 
     for (const finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
@@ -309,14 +340,17 @@ exports.createReservation = async (req, res) => {
         finance.reservationCount = (finance.reservationCount || 0) + 1;
 
         if (finance.Plan === 'Mensual') {
-          finance.pendingBalance = 125000;
+          const monthlyPrice = await resolvePrice('Mensual');
+          finance.pendingBalance = monthlyPrice;
         } else if (
           finance.Plan === 'Diario' &&
           finance.reservationPaymentStatus !== 'Si' &&
           finance.paymentDate === ''
         ) {
-          finance.pendingBalance = finance.reservationCount * 10000;
-          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000);
+          const dailyReservationPrice = await resolvePrice('Diario');
+          const paidReservations = finance.numberPaidReservations || 0;
+          finance.pendingBalance = finance.reservationCount * dailyReservationPrice;
+          finance.pendingPayment = finance.pendingBalance - (paidReservations * dailyReservationPrice);
         }
 
         await finance.save();
@@ -329,7 +363,11 @@ exports.createReservation = async (req, res) => {
 
   } catch (error) {
     console.error('Error al guardar la reserva:', error.message);
-    return res.status(500).json({ message: 'Error interno del servidor al guardar la reserva.' });
+    const status = error.code === 'PRICE_NOT_FOUND' ? 400 : 500;
+    const message = error.code === 'PRICE_NOT_FOUND'
+      ? error.message
+      : 'Error interno del servidor al guardar la reserva.';
+    return res.status(status).json({ message });
   }
 };
 
@@ -475,6 +513,15 @@ exports.deleteReservation = async (req, res) => {
     });
 
     const reservationDate = moment(deletedReservation.day, 'YYYY-MM-DD');
+    const priceCache = {};
+
+    const resolvePrice = async (item) => {
+      if (!priceCache[item]) {
+        priceCache[item] = await getPriceValue({ item });
+      }
+      return priceCache[item];
+    };
+
     for (let finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
       const endDate = startDate.clone().add(30, 'days');
@@ -483,10 +530,13 @@ exports.deleteReservation = async (req, res) => {
         finance.reservationCount = Math.max((finance.reservationCount || 0) - 1, 0);
 
         if (finance.Plan === 'Mensual') {
-          finance.pendingBalance = 125000;
+          const monthlyPrice = await resolvePrice('Mensual');
+          finance.pendingBalance = monthlyPrice;
         } else if (finance.Plan === 'Diario') {
-          finance.pendingBalance = finance.reservationCount * 10000;
-          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
+          const dailyReservationPrice = await resolvePrice('Diario');
+          const paidReservations = finance.numberPaidReservations || 0;
+          finance.pendingBalance = finance.reservationCount * dailyReservationPrice;
+          finance.pendingPayment = finance.pendingBalance - (paidReservations * dailyReservationPrice);
         }
 
         await finance.save();
@@ -501,9 +551,9 @@ exports.deleteReservation = async (req, res) => {
     res.status(200).json(response);
   } catch (error) {
     console.error(error);
+    if (error.code === 'PRICE_NOT_FOUND') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ error: 'Error al eliminar la reserva' });
   }
 };
-
-
-

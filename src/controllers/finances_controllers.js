@@ -1,4 +1,6 @@
+const moment = require('moment');
 const UserFinance = require('../models/finances');
+const { getPriceValue } = require('../services/priceService');
 
 
 exports.financesUser = async (req, res) => {
@@ -11,10 +13,18 @@ exports.financesUser = async (req, res) => {
   }
 
   let pendingBalance = 0;
-  if (Plan === 'Mensual') {
-    pendingBalance = 125000;
-  } else if (Plan === 'Diario') {
-    pendingBalance = 0;
+
+  try {
+    if (Plan === 'Mensual') {
+      pendingBalance = await getPriceValue({ item: 'Mensual' });
+    } else if (Plan === 'Diario') {
+      pendingBalance = 0;
+    }
+  } catch (error) {
+    if (error.code === 'PRICE_NOT_FOUND') {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ error: 'Error al obtener el precio del plan', details: error.message });
   }
 
   const newUserFinance = new UserFinance({
@@ -39,14 +49,12 @@ exports.financesUser = async (req, res) => {
     news: ''
   });
 
-  newUserFinance.save()
-    .then((UserFinance) => {
-      res.status(201).json(UserFinance);
-    })
-    .catch((error) => {
-
-      res.status(500).json({ error: 'Error al crear el usuario', details: error.message });
-    });
+  try {
+    const savedFinance = await newUserFinance.save();
+    res.status(201).json(savedFinance);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear el usuario', details: error.message });
+  }
 };
 
 exports.updateDailyPlanStartDate = async () => {
@@ -207,6 +215,4 @@ exports.deleteFiance = (req, res) => {
       res.status(500).json({ error: 'Error al eliminar usuario' });
     });
 };
-
-
 
