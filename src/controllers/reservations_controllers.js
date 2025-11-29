@@ -6,15 +6,13 @@ const Slot = require('../models/quotaLimits');
 const Counter = require('../models/counter')
 const UserFinance = require('../models/finances');
 const { getPriceValue } = require('../services/priceService');
+const Invitado = require('../models/invitados');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
 //const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
 //const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
-
-
-
 
 
 exports.getAllReservations = async (req, res) => {
@@ -204,23 +202,47 @@ exports.createReservation = async (req, res) => {
     }
 
     const userObjectId = new mongoose.Types.ObjectId(userId);
-    const user = await User.findById(userObjectId);
+    let user = await User.findById(userObjectId);
+    let isGuestReservation = false;
+    let guestProfile = null;
+
     if (!user) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
+      guestProfile = await Invitado.findById(userObjectId);
+      if (!guestProfile) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+      isGuestReservation = true;
+      user = {
+        _id: guestProfile._id,
+        FirstName: guestProfile.name || 'Invitado',
+        LastName: '',
+        Plan: 'Invitado',
+        Active: 'Sí'
+      };
     }
 
-    const normalizedPlan = (user.Plan || '').trim().toLowerCase();
-    if (normalizedPlan.includes('diario')) {
-      const pendingDailyBalance = await UserFinance.exists({
-        userId: userObjectId,
-        Plan: { $regex: /diario/i },
-        pendingBalance: { $gt: 0 }
-      });
+    const bogotaNow = moment().tz('America/Bogota');
+    const monthStart = bogotaNow.clone().startOf('month').format('YYYY-MM-DD');
+    const monthEnd = bogotaNow.clone().endOf('month').format('YYYY-MM-DD');
 
-      if (pendingDailyBalance) {
+    const dailyFinance = isGuestReservation ? null : await UserFinance.findOne({
+      userId: userObjectId,
+      Plan: { $regex: /^diario$/i },
+      startDate: { $gte: monthStart, $lte: monthEnd }
+    });
+
+    if (dailyFinance) {
+      const dailyPrice = await getPriceValue({ item: 'Diario' });
+      const paidValue = (dailyFinance.numberPaidReservations || 0) * dailyPrice;
+      const currentBalance = dailyFinance.pendingBalance || 0;
+      const pendingPaymentField = typeof dailyFinance.pendingPayment === 'number'
+        ? dailyFinance.pendingPayment
+        : currentBalance - paidValue;
+
+      if (pendingPaymentField > 0) {
         return res.status(400).json({
           code: 'PENDING_BALANCE',
-          message: 'No puedes crear una nueva reserva hasta que tu saldo pendiente sea 0.'
+          message: 'No puedes crear una nueva reserva hasta que pagues tus reservas pendientes.'
         });
       }
     }
@@ -290,10 +312,16 @@ exports.createReservation = async (req, res) => {
     ]);
 
     // Notificación por Telegram
+    let notificationInfo = null;
     if (userDetails.length > 0) {
-      const { firstName, lastName } = userDetails[0];
+      notificationInfo = userDetails[0];
+    } else if (isGuestReservation) {
+      notificationInfo = { firstName: user.FirstName, lastName: user.LastName };
+    }
+
+    if (notificationInfo) {
       const message = `*Nueva reserva:*\n
-      - *Usuario:* ${firstName} ${lastName}
+      - *Usuario:* ${notificationInfo.firstName} ${notificationInfo.lastName || ''}
       - *Fecha:* ${dayOfWeek}, ${day}
       - *Hora:* ${hour}`;
       try {
@@ -320,7 +348,7 @@ exports.createReservation = async (req, res) => {
     }
 
     // Actualizar información financiera del usuario
-    const userFinances = await UserFinance.find({ userId: userObjectId });
+    const userFinances = isGuestReservation ? [] : await UserFinance.find({ userId: userObjectId });
     const reservationDate = moment(day, 'YYYY-MM-DD');
     const priceCache = {};
 
@@ -333,7 +361,7 @@ exports.createReservation = async (req, res) => {
 
     for (const finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
-      const endDate = startDate.clone().add(30, 'days');
+      const endDate = startDate.clone().endOf('month');
 
       // Incluir el día final del período (rango inclusivo)
       if (reservationDate.isSameOrAfter(startDate) && reservationDate.isSameOrBefore(endDate)) {
@@ -493,18 +521,28 @@ exports.deleteReservation = async (req, res) => {
       return res.status(404).json({ error: 'Reserva no encontrada' });
     }
 
-    // verificación del usuario directamente sin agregar.
-    const user = await User.findById(deletedReservation.userId);
+    // verificar si el id pertenece a un usuario registrado o a un invitado
+    let user = await User.findById(deletedReservation.userId);
+    let guestProfile = null;
+
     if (!user) {
-      throw new Error('Detalles del usuario no encontrados.');
+      guestProfile = await Invitado.findById(deletedReservation.userId);
+      if (!guestProfile) {
+        throw new Error('Detalles del usuario no encontrados.');
+      }
     }
+
+    const firstName = user ? user.FirstName : guestProfile.name || 'Invitado';
+    const lastName = user ? user.LastName : '';
 
     // Mensaje de notificación
     const message = `*Reserva eliminada por:*
-      - *Usuario:* ${user.FirstName} ${user.LastName}
+      - *Usuario:* ${firstName} ${lastName}
       - *Fecha:* ${deletedReservation.dayOfWeek}, ${deletedReservation.day}
       - *Hora:* ${deletedReservation.hour}`;
-    await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+    if (typeof bot !== 'undefined') {
+      await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+    }
 
     //--------------------------------------------------
 
@@ -524,7 +562,7 @@ exports.deleteReservation = async (req, res) => {
 
     for (let finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
-      const endDate = startDate.clone().add(30, 'days');
+      const endDate = startDate.clone().endOf('month');
       // Incluir el día final del período (rango inclusivo)
       if (reservationDate.isSameOrAfter(startDate) && reservationDate.isSameOrBefore(endDate)) {
         finance.reservationCount = Math.max((finance.reservationCount || 0) - 1, 0);
