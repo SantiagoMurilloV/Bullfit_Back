@@ -5,15 +5,14 @@ const User = require('../models/users');
 const Slot = require('../models/quotaLimits');
 const Counter = require('../models/counter')
 const UserFinance = require('../models/finances');
+const { getPriceValue } = require('../services/priceService');
+const Invitado = require('../models/invitados');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+//const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+//const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
-
-
-
 
 
 exports.getAllReservations = async (req, res) => {
@@ -202,6 +201,52 @@ exports.createReservation = async (req, res) => {
       return res.status(400).json({ message: 'userId inválido' });
     }
 
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    let user = await User.findById(userObjectId);
+    let isGuestReservation = false;
+    let guestProfile = null;
+
+    if (!user) {
+      guestProfile = await Invitado.findById(userObjectId);
+      if (!guestProfile) {
+        return res.status(404).json({ message: 'Usuario no encontrado' });
+      }
+      isGuestReservation = true;
+      user = {
+        _id: guestProfile._id,
+        FirstName: guestProfile.name || 'Invitado',
+        LastName: '',
+        Plan: 'Invitado',
+        Active: 'Sí'
+      };
+    }
+
+    const bogotaNow = moment().tz('America/Bogota');
+    const monthStart = bogotaNow.clone().startOf('month').format('YYYY-MM-DD');
+    const monthEnd = bogotaNow.clone().endOf('month').format('YYYY-MM-DD');
+
+    const dailyFinance = isGuestReservation ? null : await UserFinance.findOne({
+      userId: userObjectId,
+      Plan: { $regex: /^diario$/i },
+      startDate: { $gte: monthStart, $lte: monthEnd }
+    });
+
+    if (dailyFinance) {
+      const dailyPrice = await getPriceValue({ item: 'Diario' });
+      const paidValue = (dailyFinance.numberPaidReservations || 0) * dailyPrice;
+      const currentBalance = dailyFinance.pendingBalance || 0;
+      const pendingPaymentField = typeof dailyFinance.pendingPayment === 'number'
+        ? dailyFinance.pendingPayment
+        : currentBalance - paidValue;
+
+      if (pendingPaymentField > 0) {
+        return res.status(400).json({
+          code: 'PENDING_BALANCE',
+          message: 'No puedes crear una nueva reserva hasta que pagues tus reservas pendientes.'
+        });
+      }
+    }
+
     // Verificar disponibilidad de slots
     const existingReservationsCount = await Reservation.countDocuments({ day, hour });
     const slot = await Slot.findOne({ day: dayOfWeek, hour });
@@ -267,10 +312,16 @@ exports.createReservation = async (req, res) => {
     ]);
 
     // Notificación por Telegram
+    let notificationInfo = null;
     if (userDetails.length > 0) {
-      const { firstName, lastName } = userDetails[0];
+      notificationInfo = userDetails[0];
+    } else if (isGuestReservation) {
+      notificationInfo = { firstName: user.FirstName, lastName: user.LastName };
+    }
+
+    if (notificationInfo) {
       const message = `*Nueva reserva:*\n
-      - *Usuario:* ${firstName} ${lastName}
+      - *Usuario:* ${notificationInfo.firstName} ${notificationInfo.lastName || ''}
       - *Fecha:* ${dayOfWeek}, ${day}
       - *Hora:* ${hour}`;
       try {
@@ -297,26 +348,37 @@ exports.createReservation = async (req, res) => {
     }
 
     // Actualizar información financiera del usuario
-    const userFinances = await UserFinance.find({ userId: new mongoose.Types.ObjectId(userId) });
+    const userFinances = isGuestReservation ? [] : await UserFinance.find({ userId: userObjectId });
     const reservationDate = moment(day, 'YYYY-MM-DD');
+    const priceCache = {};
+
+    const resolvePrice = async (item) => {
+      if (!priceCache[item]) {
+        priceCache[item] = await getPriceValue({ item });
+      }
+      return priceCache[item];
+    };
 
     for (const finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
-      const endDate = startDate.clone().add(30, 'days');
+      const endDate = startDate.clone().endOf('month');
 
       // Incluir el día final del período (rango inclusivo)
       if (reservationDate.isSameOrAfter(startDate) && reservationDate.isSameOrBefore(endDate)) {
         finance.reservationCount = (finance.reservationCount || 0) + 1;
 
         if (finance.Plan === 'Mensual') {
-          finance.pendingBalance = 125000;
+          const monthlyPrice = await resolvePrice('Mensual');
+          finance.pendingBalance = monthlyPrice;
         } else if (
           finance.Plan === 'Diario' &&
           finance.reservationPaymentStatus !== 'Si' &&
           finance.paymentDate === ''
         ) {
-          finance.pendingBalance = finance.reservationCount * 10000;
-          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000);
+          const dailyReservationPrice = await resolvePrice('Diario');
+          const paidReservations = finance.numberPaidReservations || 0;
+          finance.pendingBalance = finance.reservationCount * dailyReservationPrice;
+          finance.pendingPayment = finance.pendingBalance - (paidReservations * dailyReservationPrice);
         }
 
         await finance.save();
@@ -329,7 +391,11 @@ exports.createReservation = async (req, res) => {
 
   } catch (error) {
     console.error('Error al guardar la reserva:', error.message);
-    return res.status(500).json({ message: 'Error interno del servidor al guardar la reserva.' });
+    const status = error.code === 'PRICE_NOT_FOUND' ? 400 : 500;
+    const message = error.code === 'PRICE_NOT_FOUND'
+      ? error.message
+      : 'Error interno del servidor al guardar la reserva.';
+    return res.status(status).json({ message });
   }
 };
 
@@ -455,18 +521,28 @@ exports.deleteReservation = async (req, res) => {
       return res.status(404).json({ error: 'Reserva no encontrada' });
     }
 
-    // verificación del usuario directamente sin agregar.
-    const user = await User.findById(deletedReservation.userId);
+    // verificar si el id pertenece a un usuario registrado o a un invitado
+    let user = await User.findById(deletedReservation.userId);
+    let guestProfile = null;
+
     if (!user) {
-      throw new Error('Detalles del usuario no encontrados.');
+      guestProfile = await Invitado.findById(deletedReservation.userId);
+      if (!guestProfile) {
+        throw new Error('Detalles del usuario no encontrados.');
+      }
     }
+
+    const firstName = user ? user.FirstName : guestProfile.name || 'Invitado';
+    const lastName = user ? user.LastName : '';
 
     // Mensaje de notificación
     const message = `*Reserva eliminada por:*
-      - *Usuario:* ${user.FirstName} ${user.LastName}
+      - *Usuario:* ${firstName} ${lastName}
       - *Fecha:* ${deletedReservation.dayOfWeek}, ${deletedReservation.day}
       - *Hora:* ${deletedReservation.hour}`;
-    await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+    if (typeof bot !== 'undefined') {
+      await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+    }
 
     //--------------------------------------------------
 
@@ -475,18 +551,30 @@ exports.deleteReservation = async (req, res) => {
     });
 
     const reservationDate = moment(deletedReservation.day, 'YYYY-MM-DD');
+    const priceCache = {};
+
+    const resolvePrice = async (item) => {
+      if (!priceCache[item]) {
+        priceCache[item] = await getPriceValue({ item });
+      }
+      return priceCache[item];
+    };
+
     for (let finance of userFinances) {
       const startDate = moment(finance.startDate, 'YYYY-MM-DD');
-      const endDate = startDate.clone().add(30, 'days');
+      const endDate = startDate.clone().endOf('month');
       // Incluir el día final del período (rango inclusivo)
       if (reservationDate.isSameOrAfter(startDate) && reservationDate.isSameOrBefore(endDate)) {
         finance.reservationCount = Math.max((finance.reservationCount || 0) - 1, 0);
 
         if (finance.Plan === 'Mensual') {
-          finance.pendingBalance = 125000;
+          const monthlyPrice = await resolvePrice('Mensual');
+          finance.pendingBalance = monthlyPrice;
         } else if (finance.Plan === 'Diario') {
-          finance.pendingBalance = finance.reservationCount * 10000;
-          finance.pendingPayment = finance.pendingBalance - (finance.numberPaidReservations * 10000)
+          const dailyReservationPrice = await resolvePrice('Diario');
+          const paidReservations = finance.numberPaidReservations || 0;
+          finance.pendingBalance = finance.reservationCount * dailyReservationPrice;
+          finance.pendingPayment = finance.pendingBalance - (paidReservations * dailyReservationPrice);
         }
 
         await finance.save();
@@ -501,9 +589,9 @@ exports.deleteReservation = async (req, res) => {
     res.status(200).json(response);
   } catch (error) {
     console.error(error);
+    if (error.code === 'PRICE_NOT_FOUND') {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ error: 'Error al eliminar la reserva' });
   }
 };
-
-
-
