@@ -11,12 +11,14 @@ const invitadosRoutes = require('./src/routes/api/invitados_routes');
 // const notification = require('./helpers/twilio_route');
 const slot = require('./src/routes/api/quotaLimits_routes');
 const cors = require('cors');
+const compression = require('compression');
 const termsAndConditionsRoutes = require('./src/routes/api/termsAndConditions_routes');
 const pqrs = require('./src/routes/api/pqrs_routes');
 
 dotenv.config();
 
 app.use(express.json());
+app.use(compression());
 
 const dbUrl = process.env.MONGODB_URL;
 const PORT = process.env.PORT;
@@ -30,23 +32,10 @@ db.on('error', (error) => console.error(error));
 db.once('open', () => console.log('Conexión a la base de datos exitosa'));
 
 
-const allowedOrigins = ['https://bullfit-app-v2-0.vercel.app', 'http://localhost:3000']; 
-
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('No permitido por CORS'));
-    }
-  },
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  optionsSuccessStatus: 200, 
-};
-
-app.use(cors(corsOptions)); 
+app.use(cors({
+  origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : '*',
+  credentials: true,
+}));
 
 // Rutas de la API
 app.use('/api', usersRoutes);

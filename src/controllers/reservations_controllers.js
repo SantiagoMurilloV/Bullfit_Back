@@ -6,6 +6,7 @@ const Slot = require('../models/quotaLimits');
 const Counter = require('../models/counter')
 const UserFinance = require('../models/finances');
 const { getPriceValue } = require('../services/priceService');
+const { getCacheJSON, setCacheJSON, deleteCacheKeys } = require('../lib/cacheUtils');
 const Invitado = require('../models/invitados');
 const mongoose = require('mongoose');
 const moment = require('moment');
@@ -13,10 +14,47 @@ const TelegramBot = require('node-telegram-bot-api');
 //const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
 //const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
+const ADMIN_USER_ID = '65b217209cf3fba40530ac09';
+
+const RESERVATION_CACHE_KEYS = {
+  LIST: 'reservations:list',
+  LIST_WITH_USER: 'reservations:list:with-user',
+  MONTHLY: 'reservations:monthlyCounts',
+};
+
+const queueReservationCacheInvalidation = (userId) => {
+  const keys = [
+    RESERVATION_CACHE_KEYS.LIST,
+    RESERVATION_CACHE_KEYS.LIST_WITH_USER,
+    RESERVATION_CACHE_KEYS.MONTHLY,
+  ];
+
+  if (userId) {
+    keys.push(`reservations:user:${userId}`);
+  }
+
+  deleteCacheKeys(...keys);
+};
+
+const sendTelegramNotification = (message, options = {}) => {
+  if (typeof bot === 'undefined') {
+    return Promise.resolve();
+  }
+
+  return bot.sendMessage(ADMIN_CHAT_ID, message, options).catch((err) => {
+    console.error('Error al enviar notificación de Telegram:', err.message);
+  });
+};
 
 
 exports.getAllReservations = async (req, res) => {
   try {
+    const cacheKey = RESERVATION_CACHE_KEYS.LIST;
+    const cachedReservations = await getCacheJSON(cacheKey);
+    if (cachedReservations !== null) {
+      return res.status(200).json(cachedReservations);
+    }
+
     const reservations = await Reservation.aggregate([
 
       {
@@ -58,6 +96,8 @@ exports.getAllReservations = async (req, res) => {
         },
       },
     ]);
+
+    await setCacheJSON(cacheKey, reservations, 15);
 
     res.status(200).json(reservations);
   } catch (error) {
@@ -68,6 +108,12 @@ exports.getAllReservations = async (req, res) => {
 
 exports.getAllReservationsId = async (req, res) => {
   try {
+    const cacheKey = RESERVATION_CACHE_KEYS.LIST_WITH_USER;
+    const cachedReservations = await getCacheJSON(cacheKey);
+    if (cachedReservations !== null) {
+      return res.status(200).json(cachedReservations);
+    }
+
     const reservations = await Reservation.aggregate([
 
       {
@@ -109,6 +155,8 @@ exports.getAllReservationsId = async (req, res) => {
         },
       },
     ]);
+
+    await setCacheJSON(cacheKey, reservations, 15);
 
     res.status(200).json(reservations);
   } catch (error) {
@@ -160,9 +208,11 @@ exports.updateUserTrainingType = async (req, res) => {
       const message = `Actualización de reserva por:
         - Usuario : ${user.FirstName} ${user.LastName}
         - Cambios: ${messageChanges.join(', ')}`;
-      await bot.sendMessage(ADMIN_CHAT_ID, message);
+      sendTelegramNotification(message);
     }
 
+
+    queueReservationCacheInvalidation(updatedReservation.userId);
 
     res.status(200).json(updatedReservation);
   } catch (error) {
@@ -190,6 +240,8 @@ exports.getUserReservations_ = (req, res) => {
 
 exports.createReservation = async (req, res) => {
   const { userId, day, dayOfWeek, hour, isAdmin = false  } = req.body;
+  const isAdminUser = userId === ADMIN_USER_ID;
+  const effectiveIsAdmin = Boolean(isAdminUser || isAdmin);
 
   try {
     // Validación básica de campos
@@ -225,11 +277,13 @@ exports.createReservation = async (req, res) => {
     const monthStart = bogotaNow.clone().startOf('month').format('YYYY-MM-DD');
     const monthEnd = bogotaNow.clone().endOf('month').format('YYYY-MM-DD');
 
-    const dailyFinance = isGuestReservation ? null : await UserFinance.findOne({
-      userId: userObjectId,
-      Plan: { $regex: /^diario$/i },
-      startDate: { $gte: monthStart, $lte: monthEnd }
-    });
+    const dailyFinance = !effectiveIsAdmin && !isGuestReservation
+      ? await UserFinance.findOne({
+        userId: userObjectId,
+        Plan: { $regex: /^diario$/i },
+        startDate: { $gte: monthStart, $lte: monthEnd }
+      })
+      : null;
 
     if (dailyFinance) {
       const dailyPrice = await getPriceValue({ item: 'Diario' });
@@ -247,35 +301,41 @@ exports.createReservation = async (req, res) => {
       }
     }
 
-    // Verificar disponibilidad de slots
-    const existingReservationsCount = await Reservation.countDocuments({ day, hour });
-    const slot = await Slot.findOne({ day: dayOfWeek, hour });
-    if (!slot) {
-      return res.status(404).json({
-        code: 'SLOT_NOT_FOUND',
-        message: 'No hay información de cupos para este día y hora.'
-      });
-    }
-    
-    if (Number(slot.slots) === 0) {
-      return res.status(400).json({
-        code: 'SLOT_UNAVAILABLE',
-        message: 'Hora no disponible para reservas.'
-      });
-    }
-    
-    if (existingReservationsCount >= slot.slots) {
-      return res.status(400).json({
-        code: 'SLOT_FULL',
-        message: 'No hay cupos disponibles para esta hora.'
-      });
+    // Verificar disponibilidad de slots (omitido para admin)
+    let existingReservationsCount = 0;
+    if (!effectiveIsAdmin) {
+      const [count, slot] = await Promise.all([
+        Reservation.countDocuments({ day, hour }),
+        Slot.findOne({ day: dayOfWeek, hour })
+      ]);
+      existingReservationsCount = count;
+      if (!slot) {
+        return res.status(404).json({
+          code: 'SLOT_NOT_FOUND',
+          message: 'No hay información de cupos para este día y hora.'
+        });
+      }
+      
+      if (Number(slot.slots) === 0) {
+        return res.status(400).json({
+          code: 'SLOT_UNAVAILABLE',
+          message: 'Hora no disponible para reservas.'
+        });
+      }
+      
+      if (existingReservationsCount >= slot.slots) {
+        return res.status(400).json({
+          code: 'SLOT_FULL',
+          message: 'No hay cupos disponibles para esta hora.'
+        });
+      }
     }
     
     const reservationDateTime = moment.tz(`${day} ${hour}`, 'America/Bogota');
     const now = moment.tz('America/Bogota');
     const timeDifference = reservationDateTime.diff(now, 'minutes');
 
-    if (!isAdmin && existingReservationsCount === 0 && timeDifference < 60) {
+    if (!effectiveIsAdmin && existingReservationsCount === 0 && timeDifference < 60) {
       return res.status(400).json({
         code: 'TIME_RESTRICTION',
         message: 'Solo puedes reservar con al menos una hora de antelación si no hay reservas previas.'
@@ -291,45 +351,22 @@ exports.createReservation = async (req, res) => {
       dayOfWeek,
       hour,
       Attendance: 'Si',
-      isAdmin
+      isAdmin: effectiveIsAdmin
     });
 
     const savedReservation = await newReservation.save();
 
-    // Obtener nombre del usuario con agregación
-    const userDetails = await Reservation.aggregate([
-      { $match: { _id: savedReservation._id } },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userId',
-          foreignField: '_id',
-          as: 'userDetails'
-        }
-      },
-      { $unwind: '$userDetails' },
-      { $project: { firstName: '$userDetails.FirstName', lastName: '$userDetails.LastName' } }
-    ]);
+    // Notificación por Telegram (en segundo plano para no bloquear la respuesta)
+    const notificationInfo = {
+      firstName: user.FirstName,
+      lastName: user.LastName || ''
+    };
 
-    // Notificación por Telegram
-    let notificationInfo = null;
-    if (userDetails.length > 0) {
-      notificationInfo = userDetails[0];
-    } else if (isGuestReservation) {
-      notificationInfo = { firstName: user.FirstName, lastName: user.LastName };
-    }
-
-    if (notificationInfo) {
-      const message = `*Nueva reserva:*\n
-      - *Usuario:* ${notificationInfo.firstName} ${notificationInfo.lastName || ''}
+    const message = `*Nueva reserva:*\n
+      - *Usuario:* ${notificationInfo.firstName} ${notificationInfo.lastName}
       - *Fecha:* ${dayOfWeek}, ${day}
       - *Hora:* ${hour}`;
-      try {
-        await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
-      } catch (err) {
-        console.error('Error al enviar notificación de Telegram:', err.message);
-      }
-    }
+    sendTelegramNotification(message, { parse_mode: 'Markdown' });
 
     // Actualizar o crear contador de reservas
     let counter = await Counter.findOne({ userId, date: day });
@@ -385,6 +422,8 @@ exports.createReservation = async (req, res) => {
         break; // Solo se actualiza el primer plan válido
       }
     }
+
+    queueReservationCacheInvalidation(userId);
 
     // Éxito
     return res.status(201).json(savedReservation);
@@ -453,7 +492,14 @@ exports.getMonthlyCounts = async (req, res) => {
       }
     ];
 
+    const cacheKey = RESERVATION_CACHE_KEYS.MONTHLY;
+    const cachedResults = await getCacheJSON(cacheKey);
+    if (cachedResults !== null) {
+      return res.status(200).json(cachedResults);
+    }
+
     const results = await Counter.aggregate(pipeline);
+    await setCacheJSON(cacheKey, results, 120);
     res.status(200).json(results);
   } catch (error) {
     console.error(error);
@@ -495,19 +541,30 @@ exports.testCounterDataByYear = async (req, res) => {
   }
 };
 
-exports.getUserReservations = (req, res) => {
+exports.getUserReservations = async (req, res) => {
   const userId = req.params.userId;
 
-  Reservation.find({ userId })
-    .then((reservations) => {
-      if (!reservations) {
-        return res.status(404).json({ error: 'Reservas no encontradas' });
-      }
-      res.status(200).json(reservations);
-    })
-    .catch((error) => {
-      res.status(500).json({ error: 'Error al obtener las reservas del usuario' });
-    });
+  try {
+    const cacheKey = `reservations:user:${userId}`;
+    const cachedReservations = await getCacheJSON(cacheKey);
+    if (cachedReservations !== null) {
+      return res.status(200).json(cachedReservations);
+    }
+
+    const reservations = await Reservation.find({ userId })
+      .select('day dayOfWeek hour TrainingType Status Attendance isAdmin userId')
+      .lean();
+
+    if (!reservations) {
+      return res.status(404).json({ error: 'Reservas no encontradas' });
+    }
+
+    await setCacheJSON(cacheKey, reservations, 15);
+
+    res.status(200).json(reservations);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener las reservas del usuario' });
+  }
 };
 
 exports.deleteReservation = async (req, res) => {
@@ -540,9 +597,7 @@ exports.deleteReservation = async (req, res) => {
       - *Usuario:* ${firstName} ${lastName}
       - *Fecha:* ${deletedReservation.dayOfWeek}, ${deletedReservation.day}
       - *Hora:* ${deletedReservation.hour}`;
-    if (typeof bot !== 'undefined') {
-      await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
-    }
+    sendTelegramNotification(message, { parse_mode: 'Markdown' });
 
     //--------------------------------------------------
 
@@ -585,6 +640,8 @@ exports.deleteReservation = async (req, res) => {
       message: 'Proceso de eliminación completado',
       deletedReservation: deletedReservation
     };
+
+    queueReservationCacheInvalidation(deletedReservation.userId);
 
     res.status(200).json(response);
   } catch (error) {
