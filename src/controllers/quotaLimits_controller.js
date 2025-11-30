@@ -27,11 +27,25 @@ exports.updateSlot = async (req, res) => {
   }
 };
 
+const startProfiler = (label) => {
+  const profilerLabel = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  console.time(profilerLabel);
+  return profilerLabel;
+};
+const endProfiler = (label) => {
+  if (label) {
+    console.timeEnd(label);
+  }
+};
+
 exports.getSlots = async (req, res) => {
+  const profiler = startProfiler('getSlots');
   try {
-    const slots = await Slot.find();
+    const slots = await Slot.find().select('day hour slots').lean();
     res.json(slots);
   } catch (error) {
     res.status(500).send('Error retrieving slots');
+  } finally {
+    endProfiler(profiler);
   }
 };
