@@ -16,4 +16,4 @@ const userSchema = new mongoose.Schema({
 
 userSchema.index({ IdentificationNumber: 1 }, { unique: false, sparse: true });
 
-module.exports = mongoose.model('users', userSchema);
+module.exports = mongoose.model('User', userSchema);

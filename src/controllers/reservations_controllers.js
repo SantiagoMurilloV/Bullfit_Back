@@ -16,16 +16,136 @@ const TelegramBot = require('node-telegram-bot-api');
 const ADMIN_CHAT_ID = '6558646628';
 const ADMIN_USER_ID = '65b217209cf3fba40530ac09';
 
+const startProfiler = (label) => {
+  const profilerLabel = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  console.time(profilerLabel);
+  return profilerLabel;
+};
+
+const endProfiler = (label) => {
+  if (label) {
+    console.timeEnd(label);
+  }
+};
+
 const RESERVATION_CACHE_KEYS = {
   LIST: 'reservations:list',
   LIST_WITH_USER: 'reservations:list:with-user',
   MONTHLY: 'reservations:monthlyCounts',
 };
+const RESERVATIONS_CACHE_TTL_SECONDS = Number(
+  typeof process.env.RESERVATIONS_CACHE_TTL !== 'undefined'
+    ? process.env.RESERVATIONS_CACHE_TTL
+    : 0
+);
+const getMinimumReservationDate = () =>
+  moment().tz('America/Bogota').startOf('isoWeek').subtract(1, 'week').format('YYYY-MM-DD');
+const isFutureReservation = (reservation) => {
+  if (!reservation || !reservation.day) {
+    return false;
+  }
+  return reservation.day >= getMinimumReservationDate();
+};
+
+const reservationsCacheState = {
+  data: null,
+  loadingPromise: null,
+  mutationPromise: Promise.resolve(),
+};
+
+const normalizeReservationsData = (data = []) =>
+  data.filter(isFutureReservation);
+
+const setReservationsCacheData = async (data) => {
+  const normalizedData = normalizeReservationsData(data);
+  reservationsCacheState.data = normalizedData;
+  await Promise.all([
+    setCacheJSON(RESERVATION_CACHE_KEYS.LIST, normalizedData, RESERVATIONS_CACHE_TTL_SECONDS),
+    setCacheJSON(RESERVATION_CACHE_KEYS.LIST_WITH_USER, normalizedData, RESERVATIONS_CACHE_TTL_SECONDS),
+  ]);
+};
+
+const loadReservationsCache = async () => {
+  const cached = await getCacheJSON(RESERVATION_CACHE_KEYS.LIST);
+  if (cached !== null) {
+    const normalized = normalizeReservationsData(cached);
+    reservationsCacheState.data = normalized;
+    if (normalized.length !== cached.length) {
+      await setReservationsCacheData(normalized);
+    }
+    return normalized;
+  }
+  const freshData = await fetchReservationsWithUsers();
+  await setReservationsCacheData(freshData);
+  return freshData;
+};
+
+const getReservationsCacheData = async () => {
+  if (reservationsCacheState.data) {
+    return reservationsCacheState.data;
+  }
+
+  if (!reservationsCacheState.loadingPromise) {
+    reservationsCacheState.loadingPromise = loadReservationsCache().finally(() => {
+      reservationsCacheState.loadingPromise = null;
+    });
+  }
+
+  return reservationsCacheState.loadingPromise;
+};
+
+const mutateReservationsCache = (mutator) => {
+  reservationsCacheState.mutationPromise = reservationsCacheState.mutationPromise
+    .then(async () => {
+      const current = await getReservationsCacheData();
+      const snapshot = Array.isArray(current) ? current : [];
+      const next = normalizeReservationsData(mutator([...snapshot]) || snapshot);
+      await setReservationsCacheData(next);
+      return next;
+    })
+    .catch((error) => {
+      console.error('Error actualizando la caché de reservas:', error.message);
+    });
+
+  return reservationsCacheState.mutationPromise;
+};
+
+const addReservationToCache = async (entry) => {
+  if (!entry) {
+    return;
+  }
+  if (!isFutureReservation(entry)) {
+    return;
+  }
+  await mutateReservationsCache((data) => [entry, ...data]);
+};
+
+const updateReservationCacheEntry = async (reservationId, updater) => {
+  if (!reservationId || typeof updater !== 'function') {
+    return;
+  }
+
+  await mutateReservationsCache((data) => {
+    const index = data.findIndex((item) => item._id?.toString() === reservationId.toString());
+    if (index !== -1) {
+      const updatedItem = updater({ ...data[index] });
+      if (updatedItem) {
+        data[index] = updatedItem;
+      }
+    }
+    return data;
+  });
+};
+
+const removeReservationCacheEntry = async (reservationId) => {
+  if (!reservationId) {
+    return;
+  }
+  await mutateReservationsCache((data) => data.filter((item) => item._id?.toString() !== reservationId.toString()));
+};
 
 const queueReservationCacheInvalidation = (userId) => {
   const keys = [
-    RESERVATION_CACHE_KEYS.LIST,
-    RESERVATION_CACHE_KEYS.LIST_WITH_USER,
     RESERVATION_CACHE_KEYS.MONTHLY,
   ];
 
@@ -47,125 +167,87 @@ const sendTelegramNotification = (message, options = {}) => {
 };
 
 
+const buildReservationResponse = (reservation) => {
+  const userInfo = reservation.userId && typeof reservation.userId === 'object'
+    ? reservation.userId
+    : null;
+
+  const wrap = (value) => (typeof value === 'undefined' || value === null ? [] : [value]);
+
+  return {
+    _id: reservation._id,
+    day: reservation.day,
+    dayOfWeek: reservation.dayOfWeek,
+    hour: reservation.hour,
+    TrainingType: reservation.TrainingType,
+    Status: reservation.Status,
+    Attendance: reservation.Attendance,
+    userId: reservation.userId?._id || reservation.userId || null,
+    userName: wrap(userInfo?.FirstName),
+    Active: wrap(userInfo?.Active),
+    Plan: wrap(userInfo?.Plan),
+    userLastName: wrap(userInfo?.LastName),
+  };
+};
+
+const fetchReservationsWithUsers = async () => {
+  const minimumDate = getMinimumReservationDate();
+  const reservations = await Reservation.find({
+    day: { $gte: minimumDate },
+  })
+    .select('day dayOfWeek hour TrainingType Status Attendance userId')
+    .lean();
+
+  const userIds = [...new Set(reservations.map((r) => r.userId).filter(Boolean).map((id) => id.toString()))];
+
+  const users = userIds.length
+    ? await User.find({ _id: { $in: userIds } })
+      .select('FirstName LastName Active Plan')
+      .lean()
+    : [];
+
+  const userMap = users.reduce((acc, user) => {
+    acc[user._id.toString()] = user;
+    return acc;
+  }, {});
+
+  return reservations.map((reservation) => {
+    const userInfo = reservation.userId ? userMap[reservation.userId.toString()] : null;
+    const userReservation = userInfo
+      ? { ...reservation, userId: userInfo }
+      : reservation;
+    return buildReservationResponse(userReservation);
+  });
+};
+
 exports.getAllReservations = async (req, res) => {
+  const profiler = startProfiler('getAllReservations');
   try {
-    const cacheKey = RESERVATION_CACHE_KEYS.LIST;
-    const cachedReservations = await getCacheJSON(cacheKey);
-    if (cachedReservations !== null) {
-      return res.status(200).json(cachedReservations);
-    }
-
-    const reservations = await Reservation.aggregate([
-
-      {
-        $project: {
-          _id: 0,
-          reservation: '$reservations',
-          userId: 1,
-          day: 1,
-          dayOfWeek: 1,
-          hour: 1,
-          TrainingType: 1,
-          Status: 1,
-          Attendance: 1,
-          _id: 1,
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userId',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          day: 1,
-          dayOfWeek: 1,
-          hour: 1,
-          TrainingType: 1,
-          Status: 1,
-          Attendance: 1,
-          userId: 1,
-          userName: '$user.FirstName',
-          Active: '$user.Active',
-          Plan: '$user.Plan',
-          userLastName: '$user.LastName',
-        },
-      },
-    ]);
-
-    await setCacheJSON(cacheKey, reservations, 15);
-
+    const reservations = await getReservationsCacheData();
     res.status(200).json(reservations);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al obtener las reservas' });
+  } finally {
+    endProfiler(profiler);
   }
 };
 
 exports.getAllReservationsId = async (req, res) => {
+  const profiler = startProfiler('getAllReservationsId');
   try {
-    const cacheKey = RESERVATION_CACHE_KEYS.LIST_WITH_USER;
-    const cachedReservations = await getCacheJSON(cacheKey);
-    if (cachedReservations !== null) {
-      return res.status(200).json(cachedReservations);
-    }
-
-    const reservations = await Reservation.aggregate([
-
-      {
-        $project: {
-          _id: 0,
-          reservation: '$reservations',
-          userId: 1,
-          day: 1,
-          dayOfWeek: 1,
-          hour: 1,
-          TrainingType: 1,
-          Status: 1,
-          Attendance: 1,
-          _id: 1,
-        },
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userId',
-          foreignField: '_id',
-          as: 'user',
-        },
-      },
-      {
-        $project: {
-          _id: 1,
-          day: 1,
-          dayOfWeek: 1,
-          hour: 1,
-          TrainingType: 1,
-          Status: 1,
-          Attendance: 1,
-          userId: 1,
-          userName: '$user.FirstName',
-          Active: '$user.Active',
-          Plan: '$user.Plan',
-          userLastName: '$user.LastName',
-        },
-      },
-    ]);
-
-    await setCacheJSON(cacheKey, reservations, 15);
-
+    const reservations = await getReservationsCacheData();
     res.status(200).json(reservations);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al obtener las reservas' });
+  } finally {
+    endProfiler(profiler);
   }
 };
 
 exports.updateUserTrainingType = async (req, res) => {
+  const profiler = startProfiler('updateUserTrainingType');
   const reservationId = req.params.reservationId;
   const { TrainingType, Status, Attendance, hour } = req.body;
 
@@ -212,12 +294,21 @@ exports.updateUserTrainingType = async (req, res) => {
     }
 
 
+    await updateReservationCacheEntry(updatedReservation._id, (entry) => ({
+      ...entry,
+      TrainingType: updatedReservation.TrainingType,
+      Status: updatedReservation.Status,
+      Attendance: updatedReservation.Attendance,
+      hour: updatedReservation.hour,
+    }));
     queueReservationCacheInvalidation(updatedReservation.userId);
 
     res.status(200).json(updatedReservation);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al actualizar la reserva' });
+  } finally {
+    endProfiler(profiler);
   }
 };
 
@@ -239,6 +330,7 @@ exports.getUserReservations_ = (req, res) => {
 
 
 exports.createReservation = async (req, res) => {
+  const profiler = startProfiler('createReservation');
   const { userId, day, dayOfWeek, hour, isAdmin = false  } = req.body;
   const isAdminUser = userId === ADMIN_USER_ID;
   const effectiveIsAdmin = Boolean(isAdminUser || isAdmin);
@@ -306,7 +398,7 @@ exports.createReservation = async (req, res) => {
     if (!effectiveIsAdmin) {
       const [count, slot] = await Promise.all([
         Reservation.countDocuments({ day, hour }),
-        Slot.findOne({ day: dayOfWeek, hour })
+        Slot.findOne({ day: dayOfWeek, hour }).select('slots')
       ]);
       existingReservationsCount = count;
       if (!slot) {
@@ -423,6 +515,18 @@ exports.createReservation = async (req, res) => {
       }
     }
 
+    const cacheEntry = buildReservationResponse({
+      ...savedReservation.toObject(),
+      day: savedReservation.day,
+      userId: {
+        _id: user._id,
+        FirstName: user.FirstName,
+        LastName: user.LastName,
+        Active: user.Active,
+        Plan: user.Plan,
+      },
+    });
+    await addReservationToCache(cacheEntry);
     queueReservationCacheInvalidation(userId);
 
     // Éxito
@@ -435,12 +539,15 @@ exports.createReservation = async (req, res) => {
       ? error.message
       : 'Error interno del servidor al guardar la reserva.';
     return res.status(status).json({ message });
+  } finally {
+    endProfiler(profiler);
   }
 };
 
 
 
 exports.getMonthlyCounts = async (req, res) => {
+  const profiler = startProfiler('getMonthlyCounts');
   const currentYear = new Date().getFullYear().toString();
 
   try {
@@ -504,6 +611,8 @@ exports.getMonthlyCounts = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al obtener los conteos mensuales' });
+  } finally {
+    endProfiler(profiler);
   }
 };
 
@@ -542,6 +651,7 @@ exports.testCounterDataByYear = async (req, res) => {
 };
 
 exports.getUserReservations = async (req, res) => {
+  const profiler = startProfiler('getUserReservations');
   const userId = req.params.userId;
 
   try {
@@ -551,7 +661,10 @@ exports.getUserReservations = async (req, res) => {
       return res.status(200).json(cachedReservations);
     }
 
-    const reservations = await Reservation.find({ userId })
+    const reservations = await Reservation.find({
+      userId,
+      day: { $gte: getMinimumReservationDate() },
+    })
       .select('day dayOfWeek hour TrainingType Status Attendance isAdmin userId')
       .lean();
 
@@ -564,10 +677,13 @@ exports.getUserReservations = async (req, res) => {
     res.status(200).json(reservations);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener las reservas del usuario' });
+  } finally {
+    endProfiler(profiler);
   }
 };
 
 exports.deleteReservation = async (req, res) => {
+  const profiler = startProfiler('deleteReservation');
   const reservationId = req.params.reservationId;
 
   try {
@@ -641,6 +757,7 @@ exports.deleteReservation = async (req, res) => {
       deletedReservation: deletedReservation
     };
 
+    await removeReservationCacheEntry(reservationId);
     queueReservationCacheInvalidation(deletedReservation.userId);
 
     res.status(200).json(response);
@@ -650,5 +767,7 @@ exports.deleteReservation = async (req, res) => {
       return res.status(400).json({ message: error.message });
     }
     res.status(500).json({ error: 'Error al eliminar la reserva' });
+  } finally {
+    endProfiler(profiler);
   }
 };
