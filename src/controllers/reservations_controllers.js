@@ -11,10 +11,12 @@ const Invitado = require('../models/invitados');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
+
 const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+//const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
 const ADMIN_CHAT_ID = '6558646628';
-const ADMIN_USER_ID = '65b217209cf3fba40530ac09';
+//const ADMIN_CHAT_ID = '2067829989';  //test bot admin
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 const startProfiler = (label) => {
   const profilerLabel = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -156,17 +158,6 @@ const queueReservationCacheInvalidation = (userId) => {
   deleteCacheKeys(...keys);
 };
 
-const sendTelegramNotification = (message, options = {}) => {
-  if (typeof bot === 'undefined') {
-    return Promise.resolve();
-  }
-
-  return bot.sendMessage(ADMIN_CHAT_ID, message, options).catch((err) => {
-    console.error('Error al enviar notificación de Telegram:', err.message);
-  });
-};
-
-
 const buildReservationResponse = (reservation) => {
   const userInfo = reservation.userId && typeof reservation.userId === 'object'
     ? reservation.userId
@@ -270,6 +261,7 @@ exports.updateUserTrainingType = async (req, res) => {
 
   if (TrainingType) {
     updateFields.TrainingType = TrainingType;
+    messageChanges.push(`Tipo de entrenamiento actualizado a: ${TrainingType}`);
   }
 
 
@@ -285,12 +277,15 @@ exports.updateUserTrainingType = async (req, res) => {
       return res.status(404).json({ error: 'Detalles del usuario no encontrados' });
     }
 
-    // Compilar mensaje para Telegram
-    if (messageChanges.length > 0) {
-      const message = `Actualización de reserva por:
-        - Usuario : ${user.FirstName} ${user.LastName}
-        - Cambios: ${messageChanges.join(', ')}`;
-      sendTelegramNotification(message);
+    if (messageChanges.length > 0 && bot && ADMIN_CHAT_ID) {
+      const message = `*Actualización de reserva*\n` +
+        `- *Usuario:* ${user.FirstName} ${user.LastName}\n` +
+        `- *Cambios:* ${messageChanges.join(', ')}`;
+      try {
+        await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+      } catch (err) {
+        console.error('Error al enviar notificación de Telegram:', err.message);
+      }
     }
 
 
@@ -332,8 +327,7 @@ exports.getUserReservations_ = (req, res) => {
 exports.createReservation = async (req, res) => {
   const profiler = startProfiler('createReservation');
   const { userId, day, dayOfWeek, hour, isAdmin = false  } = req.body;
-  const isAdminUser = userId === ADMIN_USER_ID;
-  const effectiveIsAdmin = Boolean(isAdminUser || isAdmin);
+  const effectiveIsAdmin = Boolean(isAdmin);
 
   try {
     // Validación básica de campos
@@ -448,17 +442,19 @@ exports.createReservation = async (req, res) => {
 
     const savedReservation = await newReservation.save();
 
-    // Notificación por Telegram (en segundo plano para no bloquear la respuesta)
-    const notificationInfo = {
-      firstName: user.FirstName,
-      lastName: user.LastName || ''
-    };
-
-    const message = `*Nueva reserva:*\n
-      - *Usuario:* ${notificationInfo.firstName} ${notificationInfo.lastName}
-      - *Fecha:* ${dayOfWeek}, ${day}
-      - *Hora:* ${hour}`;
-    sendTelegramNotification(message, { parse_mode: 'Markdown' });
+    if (bot && ADMIN_CHAT_ID) {
+      const firstName = user.FirstName || 'Invitado';
+      const lastName = user.LastName || '';
+      const message = `*Nueva reserva*\n` +
+        `- *Usuario:* ${firstName} ${lastName}\n` +
+        `- *Fecha:* ${dayOfWeek}, ${day}\n` +
+        `- *Hora:* ${hour}`;
+      try {
+        await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+      } catch (err) {
+        console.error('Error al enviar notificación de Telegram:', err.message);
+      }
+    }
 
     // Actualizar o crear contador de reservas
     let counter = await Counter.findOne({ userId, date: day });
@@ -705,15 +701,20 @@ exports.deleteReservation = async (req, res) => {
       }
     }
 
-    const firstName = user ? user.FirstName : guestProfile.name || 'Invitado';
-    const lastName = user ? user.LastName : '';
-
-    // Mensaje de notificación
-    const message = `*Reserva eliminada por:*
-      - *Usuario:* ${firstName} ${lastName}
-      - *Fecha:* ${deletedReservation.dayOfWeek}, ${deletedReservation.day}
-      - *Hora:* ${deletedReservation.hour}`;
-    sendTelegramNotification(message, { parse_mode: 'Markdown' });
+    if (bot && ADMIN_CHAT_ID) {
+      const profile = user || guestProfile || {};
+      const firstName = profile.FirstName || profile.name || 'Invitado';
+      const lastName = profile.LastName || '';
+      const message = `*Reserva eliminada*\n` +
+        `- *Usuario:* ${firstName} ${lastName}\n` +
+        `- *Fecha:* ${deletedReservation.dayOfWeek}, ${deletedReservation.day}\n` +
+        `- *Hora:* ${deletedReservation.hour}`;
+      try {
+        await bot.sendMessage(ADMIN_CHAT_ID, message, { parse_mode: 'Markdown' });
+      } catch (err) {
+        console.error('Error al enviar notificación de Telegram:', err.message);
+      }
+    }
 
     //--------------------------------------------------
 
