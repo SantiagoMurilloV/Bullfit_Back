@@ -149,14 +149,28 @@ exports.updateFinanceById = async (req, res) => {
   }
 };
 
-exports.getAllUsersFinances = (req, res) => {
-  UserFinance.find()
-    .then((users) => {
-      res.json(users);
-    })
-    .catch((error) => {
-      res.status(500).json({ error: 'Error al obtener la información de los usuarios' });
-    });
+exports.getAllUsersFinances = async (req, res) => {
+  try {
+    const { date } = req.query;
+    const referenceDate = date
+      ? moment(date, ['YYYY-MM', 'YYYY-MM-DD'], true)
+      : moment();
+
+    if (!referenceDate.isValid()) {
+      return res.status(400).json({ error: 'Formato de fecha inválido. Usa YYYY-MM o YYYY-MM-DD.' });
+    }
+
+    const startRange = referenceDate.clone().subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+    const endRange = referenceDate.clone().add(1, 'month').endOf('month').format('YYYY-MM-DD');
+
+    const users = await UserFinance.find({
+      startDate: { $gte: startRange, $lte: endRange }
+    }).sort({ startDate: -1 });
+
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener la información de los usuarios' });
+  }
 };
 exports.getAllDiaryUsersFinances = (req, res) => {
 
@@ -215,4 +229,3 @@ exports.deleteFiance = (req, res) => {
       res.status(500).json({ error: 'Error al eliminar usuario' });
     });
 };
-
