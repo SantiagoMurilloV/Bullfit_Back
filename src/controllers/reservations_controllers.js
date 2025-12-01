@@ -11,20 +11,20 @@ const Invitado = require('../models/invitados');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
-//const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-//const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const ADMIN_CHAT_ID = '6558646628';
 const ADMIN_USER_ID = '65b217209cf3fba40530ac09';
 
 const startProfiler = (label) => {
   const profilerLabel = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  console.time(profilerLabel);
+  //console.time(profilerLabel);
   return profilerLabel;
 };
 
 const endProfiler = (label) => {
   if (label) {
-    console.timeEnd(label);
+    //console.timeEnd(label);
   }
 };
 

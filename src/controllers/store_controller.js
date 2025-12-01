@@ -77,7 +77,22 @@ exports.updateStoreConsumption = async (req, res) => {
 
 exports.getAllStoreConsumptions = async (req, res) => {
   try {
-    const consumptions = await UserStore.find();
+    const { date } = req.query;
+    const referenceDate = date
+      ? moment.tz(date, ['YYYY-MM', 'YYYY-MM-DD'], 'America/Bogota', true)
+      : moment().tz('America/Bogota');
+
+    if (!referenceDate.isValid()) {
+      return res.status(400).json({ error: 'Formato de fecha inválido. Usa YYYY-MM o YYYY-MM-DD.' });
+    }
+
+    const startRange = referenceDate.clone().subtract(1, 'month').startOf('month').format('YYYY-MM-DD');
+    const endRange = referenceDate.clone().add(1, 'month').endOf('month').format('YYYY-MM-DD');
+
+    const consumptions = await UserStore.find({
+      dateOfPurchase: { $gte: startRange, $lte: endRange }
+    }).sort({ dateOfPurchase: -1, purchaseTime: -1 });
+
     res.json(consumptions);
   } catch (error) {
     console.error(error);
