@@ -172,6 +172,28 @@ exports.getAllUsersFinances = async (req, res) => {
     res.status(500).json({ error: 'Error al obtener la información de los usuarios' });
   }
 };
+
+exports.getFinancesByMonth = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const referenceDate = moment(month, 'YYYY-MM', true);
+
+    if (!referenceDate.isValid()) {
+      return res.status(400).json({ error: 'Formato de mes inválido. Usa YYYY-MM.' });
+    }
+
+    const startOfMonth = referenceDate.clone().startOf('month').format('YYYY-MM-DD');
+    const endOfMonth = referenceDate.clone().endOf('month').format('YYYY-MM-DD');
+
+    const finances = await UserFinance.find({
+      startDate: { $gte: startOfMonth, $lte: endOfMonth }
+    }).sort({ startDate: -1 });
+
+    res.json(finances);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener las finanzas del mes solicitado' });
+  }
+};
 exports.getAllDiaryUsersFinances = (req, res) => {
 
   UserFinance.find({ Plan: 'Diario' })  
