@@ -173,25 +173,37 @@ exports.getAllUsersFinances = async (req, res) => {
   }
 };
 
+exports.getEveryFinance = async (req, res) => {
+  try {
+    const finances = await UserFinance.find().sort({ startDate: -1 });
+    res.json(finances);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener todas las finanzas' });
+  }
+};
+
 exports.getFinancesByMonth = async (req, res) => {
   try {
-    const { month } = req.params;
-    const referenceDate = moment(month, 'YYYY-MM', true);
+    const rawMonth = req.params.month || req.query.month || '';
+    const sanitizedInput = rawMonth.trim().split('T')[0];
 
-    if (!referenceDate.isValid()) {
-      return res.status(400).json({ error: 'Formato de mes inválido. Usa YYYY-MM.' });
+    const match = sanitizedInput.match(/^(\d{4})-(\d{1,2})/);
+
+    if (!match) {
+      return res.status(400).json({ error: 'Formato de mes inválido. Usa YYYY-MM o YYYY-MM-DD.' });
     }
 
-    const startOfMonth = referenceDate.clone().startOf('month').format('YYYY-MM-DD');
-    const endOfMonth = referenceDate.clone().endOf('month').format('YYYY-MM-DD');
+    const [, year, monthPart] = match;
+    const prefix = `${year}-${monthPart.padStart(2, '0')}`;
 
     const finances = await UserFinance.find({
-      startDate: { $gte: startOfMonth, $lte: endOfMonth }
+      startDate: { $regex: `^${prefix}` }
     }).sort({ startDate: -1 });
 
     res.json(finances);
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener las finanzas del mes solicitado' });
+    console.error('Error en getFinancesByMonth:', error);
+    res.status(500).json({ error: 'Error al obtener las finanzas del mes solicitado', details: error.message });
   }
 };
 exports.getAllDiaryUsersFinances = (req, res) => {

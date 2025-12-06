@@ -6,6 +6,7 @@ router.post('/finances', financesController.financesUser);
 router.put('/userFinance/:userId', financesController.updateFinanceByUserId);
 router.put('/finance/:financeId', financesController.updateFinanceById);
 router.get('/finances', financesController.getAllUsersFinances);
+router.get('/finances/all', financesController.getEveryFinance);
 router.get('/finances/month/:month', financesController.getFinancesByMonth);
 router.get('/getAllDiaryUsersFinances',financesController.getAllDiaryUsersFinances);
 router.get('/finances/:userId', financesController.getUserFinance);
