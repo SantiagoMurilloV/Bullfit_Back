@@ -100,6 +100,31 @@ exports.getAllStoreConsumptions = async (req, res) => {
   }
 };
 
+exports.getStoreConsumptionsByMonth = async (req, res) => {
+  try {
+    const monthParam = req.params.month || req.query.month || '';
+    const sanitizedInput = monthParam.trim().split('T')[0];
+
+    const match = sanitizedInput.match(/^(\d{4})-(\d{1,2})/);
+
+    if (!match) {
+      return res.status(400).json({ error: 'Formato de mes inválido. Usa YYYY-MM o YYYY-MM-DD.' });
+    }
+
+    const [, year, monthPart] = match;
+    const prefix = `${year}-${monthPart.padStart(2, '0')}`;
+
+    const consumptions = await UserStore.find({
+      dateOfPurchase: { $regex: `^${prefix}` }
+    }).sort({ dateOfPurchase: -1, purchaseTime: -1 });
+
+    res.json(consumptions);
+  } catch (error) {
+    console.error('Error en getStoreConsumptionsByMonth:', error);
+    res.status(500).json({ error: 'Error al obtener los consumos del mes solicitado', details: error.message });
+  }
+};
+
 
 exports.getStoreConsumption = async (req, res) => {
   const consumptionId = req.params.id;
