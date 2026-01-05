@@ -12,10 +12,10 @@ const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
 
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-//const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
-const ADMIN_CHAT_ID = '6558646628';
-//const ADMIN_CHAT_ID = '2067829989';  //test bot admin
+//const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
+//const ADMIN_CHAT_ID = '6558646628';
+const ADMIN_CHAT_ID = '2067829989';  //test bot admin
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 const startProfiler = (label) => {
@@ -326,7 +326,7 @@ exports.getUserReservations_ = (req, res) => {
 
 exports.createReservation = async (req, res) => {
   const profiler = startProfiler('createReservation');
-  const { userId, day, dayOfWeek, hour, isAdmin = false  } = req.body;
+  const { userId, day, dayOfWeek, hour, isAdmin = false } = req.body;
   const effectiveIsAdmin = Boolean(isAdmin);
 
   try {
@@ -401,14 +401,14 @@ exports.createReservation = async (req, res) => {
           message: 'No hay información de cupos para este día y hora.'
         });
       }
-      
+
       if (Number(slot.slots) === 0) {
         return res.status(400).json({
           code: 'SLOT_UNAVAILABLE',
           message: 'Hora no disponible para reservas.'
         });
       }
-      
+
       if (existingReservationsCount >= slot.slots) {
         return res.status(400).json({
           code: 'SLOT_FULL',
@@ -416,7 +416,7 @@ exports.createReservation = async (req, res) => {
         });
       }
     }
-    
+
     const reservationDateTime = moment.tz(`${day} ${hour}`, 'America/Bogota');
     const now = moment.tz('America/Bogota');
     const timeDifference = reservationDateTime.diff(now, 'minutes');
@@ -428,7 +428,7 @@ exports.createReservation = async (req, res) => {
       });
     }
 
-    
+
 
     // Crear nueva reserva
     const newReservation = new Reservation({
@@ -768,6 +768,71 @@ exports.deleteReservation = async (req, res) => {
       return res.status(400).json({ message: error.message });
     }
     res.status(500).json({ error: 'Error al eliminar la reserva' });
+  } finally {
+    endProfiler(profiler);
+  }
+};
+
+exports.getReservationsByWeek = async (req, res) => {
+  const profiler = startProfiler('getReservationsByWeek');
+  try {
+    const { date } = req.query;
+    // Usar la fecha dada o la actual.
+    // Importante: especificar la zona horaria para coincidir con el resto del sistema
+    const referenceDate = date
+      ? moment.tz(date, 'YYYY-MM-DD', 'America/Bogota')
+      : moment().tz('America/Bogota');
+
+    if (!referenceDate.isValid()) {
+      return res.status(400).json({ error: 'Fecha inválida. Use formato YYYY-MM-DD.' });
+    }
+
+    // Calcular inicio (Lunes) y fin (Domingo) de la semana iso
+    const startOfWeek = referenceDate.clone().startOf('isoWeek').format('YYYY-MM-DD');
+    const endOfWeek = referenceDate.clone().endOf('isoWeek').format('YYYY-MM-DD');
+
+    // Buscar reservas en ese rango
+    // Nota: 'day' en Reservation es un String YYYY-MM-DD
+    const reservations = await Reservation.find({
+      day: { $gte: startOfWeek, $lte: endOfWeek }
+    })
+      .select('day dayOfWeek hour TrainingType Status Attendance userId isAdmin')
+      .lean();
+
+    // Obtener detalles de usuarios (similar a fetchReservationsWithUsers pero local, sin caché global excesivo)
+    // Extraemos IDs únicos
+    const userIds = [...new Set(reservations.map((r) => r.userId).filter(Boolean).map((id) => id.toString()))];
+
+    let userMap = {};
+    if (userIds.length > 0) {
+      const users = await User.find({ _id: { $in: userIds } })
+        .select('FirstName LastName Active Plan')
+        .lean();
+
+      userMap = users.reduce((acc, user) => {
+        acc[user._id.toString()] = user;
+        return acc;
+      }, {});
+    }
+
+    // Construir respuesta con datos de usuario poblados
+    const enrichedReservations = reservations.map((reservation) => {
+      const userInfo = reservation.userId ? userMap[reservation.userId.toString()] : null;
+      const userReservation = userInfo
+        ? { ...reservation, userId: userInfo }
+        : reservation;
+      return buildReservationResponse(userReservation);
+    });
+
+    res.status(200).json({
+      startDate: startOfWeek,
+      endDate: endOfWeek,
+      reservations: enrichedReservations
+    });
+
+  } catch (error) {
+    console.error('Error en getReservationsByWeek:', error);
+    res.status(500).json({ error: 'Error al obtener las reservas de la semana.' });
   } finally {
     endProfiler(profiler);
   }

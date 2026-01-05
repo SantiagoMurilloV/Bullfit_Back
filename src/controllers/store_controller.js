@@ -1,10 +1,11 @@
 const UserStore = require('../models/store');
+const User = require('../models/users');
 const moment = require('moment-timezone');
 const { getPriceValue } = require('../services/priceService');
 
 
 exports.createStoreConsumption = async (req, res) => {
-  const { userId, name, item, quantity, value, paymentStatus , news} = req.body;
+  const { userId, name, item, quantity, value, paymentStatus, news } = req.body;
 
   const bogotaTime = moment.tz(new Date(), 'America/Bogota');
   const formattedDate = bogotaTime.format('YYYY-MM-DD');
@@ -27,7 +28,7 @@ exports.createStoreConsumption = async (req, res) => {
 
   const newConsumption = new UserStore({
     userId,
-    news:'',
+    news: '',
     name,
     item,
     quantity,
@@ -58,7 +59,7 @@ exports.updateStoreConsumption = async (req, res) => {
 
     const updatedConsumption = await UserStore.findByIdAndUpdate(
       consumptionId,
-      { userId, item, quantity, value: finalValue, paymentStatus , news},
+      { userId, item, quantity, value: finalValue, paymentStatus, news },
       { new: true }
     );
 
@@ -116,9 +117,32 @@ exports.getStoreConsumptionsByMonth = async (req, res) => {
 
     const consumptions = await UserStore.find({
       dateOfPurchase: { $regex: `^${prefix}` }
-    }).sort({ dateOfPurchase: -1, purchaseTime: -1 });
+    }).lean().sort({ dateOfPurchase: -1, purchaseTime: -1 });
 
-    res.json(consumptions);
+    // Populate user details manually
+    const userIds = [...new Set(consumptions.map(c => c.userId).filter(Boolean).map(id => id.toString()))];
+
+    let userMap = {};
+    if (userIds.length > 0) {
+      const users = await User.find({ _id: { $in: userIds } })
+        .select('FirstName LastName Active Plan')
+        .lean();
+
+      userMap = users.reduce((acc, user) => {
+        acc[user._id.toString()] = user;
+        return acc;
+      }, {});
+    }
+
+    const enrichedConsumptions = consumptions.map(consumption => {
+      const userInfo = consumption.userId ? userMap[consumption.userId.toString()] : null;
+      return {
+        ...consumption,
+        userId: userInfo || consumption.userId // Replace ID with object if found, else keep ID
+      };
+    });
+
+    res.json(enrichedConsumptions);
   } catch (error) {
     console.error('Error en getStoreConsumptionsByMonth:', error);
     res.status(500).json({ error: 'Error al obtener los consumos del mes solicitado', details: error.message });
