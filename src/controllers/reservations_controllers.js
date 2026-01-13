@@ -12,10 +12,10 @@ const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
 
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-//const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
-const ADMIN_CHAT_ID = '6558646628';
-//const ADMIN_CHAT_ID = '2067829989';  //test bot admin
+//const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
+//onst ADMIN_CHAT_ID = '6558646628';
+const ADMIN_CHAT_ID = '2067829989';  //test bot admin
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 const startProfiler = (label) => {
@@ -240,36 +240,81 @@ exports.getAllReservationsId = async (req, res) => {
 exports.updateUserTrainingType = async (req, res) => {
   const profiler = startProfiler('updateUserTrainingType');
   const reservationId = req.params.reservationId;
-  const { TrainingType, Status, Attendance, hour } = req.body;
-
-
-  let messageChanges = [];
-  const updateFields = {};
-
-  if (Status) {
-    updateFields.Status = Status;
-    messageChanges.push(`Estado actualizado a: ${Status}`);
-  }
-  if (Attendance) {
-    updateFields.Attendance = Attendance;
-    messageChanges.push(`Asistencia actualizada a: ${Attendance}`);
-  }
-  if (hour) {
-    updateFields.hour = hour;
-    messageChanges.push(`Hora actualizada a: ${hour}`);
-  }
-
-  if (TrainingType) {
-    updateFields.TrainingType = TrainingType;
-    messageChanges.push(`Tipo de entrenamiento actualizado a: ${TrainingType}`);
-  }
+  const { TrainingType, Status, Attendance, hour, isAdmin = false } = req.body;
+  const effectiveIsAdmin = Boolean(isAdmin);
 
 
   try {
-    const updatedReservation = await Reservation.findByIdAndUpdate(reservationId, updateFields, { new: true });
-    if (!updatedReservation) {
+    const reservation = await Reservation.findById(reservationId);
+
+    if (!reservation) {
       return res.status(404).json({ error: 'Reserva no encontrada' });
     }
+
+    let messageChanges = [];
+    const updateFields = {};
+
+    if (Status) {
+      updateFields.Status = Status;
+      messageChanges.push(`Estado actualizado a: ${Status}`);
+    }
+    if (Attendance) {
+      updateFields.Attendance = Attendance;
+      messageChanges.push(`Asistencia actualizada a: ${Attendance}`);
+    }
+
+    // Validar cambio de hora
+    if (hour && hour !== reservation.hour) {
+      if (!effectiveIsAdmin) {
+        // Validar cupos y disponibilidad como en createReservation
+        const [count, slot] = await Promise.all([
+          Reservation.countDocuments({ day: reservation.day, hour }),
+          Slot.findOne({ day: reservation.dayOfWeek, hour }).select('slots')
+        ]);
+
+        if (!slot) {
+          return res.status(404).json({
+            code: 'SLOT_NOT_FOUND',
+            message: 'No hay información de cupos para este día y hora.'
+          });
+        }
+
+        if (Number(slot.slots) === 0) {
+          return res.status(400).json({
+            code: 'SLOT_UNAVAILABLE',
+            message: 'Hora no disponible para reservas.'
+          });
+        }
+
+        if (count >= slot.slots) {
+          return res.status(400).json({
+            code: 'SLOT_FULL',
+            message: 'No hay cupos disponibles para esta hora.'
+          });
+        }
+
+        const reservationDateTime = moment.tz(`${reservation.day} ${hour}`, 'America/Bogota');
+        const now = moment.tz('America/Bogota');
+        const timeDifference = reservationDateTime.diff(now, 'minutes');
+
+        if (count === 0 && timeDifference < 60) {
+          return res.status(400).json({
+            code: 'TIME_RESTRICTION',
+            message: 'Solo puedes reservar con al menos una hora de antelación si no hay reservas previas.'
+          });
+        }
+      }
+
+      updateFields.hour = hour;
+      messageChanges.push(`Hora actualizada a: ${hour}`);
+    }
+
+    if (TrainingType) {
+      updateFields.TrainingType = TrainingType;
+      messageChanges.push(`Tipo de entrenamiento actualizado a: ${TrainingType}`);
+    }
+
+    const updatedReservation = await Reservation.findByIdAndUpdate(reservationId, updateFields, { new: true });
 
     // Recuperar detalles del usuario
     const user = await User.findById(updatedReservation.userId);
