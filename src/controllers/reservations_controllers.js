@@ -12,10 +12,10 @@ const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
 
-//const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
-//onst ADMIN_CHAT_ID = '6558646628';
-const ADMIN_CHAT_ID = '2067829989';  //test bot admin
+const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+//const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
+const ADMIN_CHAT_ID = '6558646628';
+//const ADMIN_CHAT_ID = '2067829989';  //test bot admin
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 const startProfiler = (label) => {
