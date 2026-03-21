@@ -16,6 +16,7 @@ const userFinanceSchema = new mongoose.Schema({
   pendingPayment:Number,
   totalConsumption: Number,
   numberPaidReservations:Number,
+  pricePerReservation: Number,
   paymentDate: String,
   paymentTime:String,
   reservationPaymentStatus: String,

@@ -1,6 +1,31 @@
 const moment = require('moment');
 const UserFinance = require('../models/finances');
 const { getPriceValue } = require('../services/priceService');
+const { recomputeDailyFinanceFields } = require('../services/financeService');
+
+const syncDailyFinanceRecord = async (finance) => {
+  if ((finance.Plan || '').toLowerCase() !== 'diario') {
+    return finance;
+  }
+
+  const recalculatedDailyFinance = await recomputeDailyFinanceFields(finance);
+  const isOutdatedDailyFinance =
+    finance.reservationCount !== recalculatedDailyFinance.reservationCount ||
+    finance.numberPaidReservations !== recalculatedDailyFinance.numberPaidReservations ||
+    finance.pendingBalance !== recalculatedDailyFinance.pendingBalance ||
+    finance.pendingPayment !== recalculatedDailyFinance.pendingPayment ||
+    finance.reservationPaymentStatus !== recalculatedDailyFinance.reservationPaymentStatus ||
+    (finance.paymentDate || '') !== recalculatedDailyFinance.paymentDate ||
+    (finance.paymentTime || '') !== recalculatedDailyFinance.paymentTime;
+
+  if (!isOutdatedDailyFinance) {
+    return finance;
+  }
+
+  Object.assign(finance, recalculatedDailyFinance);
+  await finance.save();
+  return finance;
+};
 
 
 exports.financesUser = async (req, res) => {
@@ -13,12 +38,14 @@ exports.financesUser = async (req, res) => {
   }
 
   let pendingBalance = 0;
+  let pricePerReservation = 0;
 
   try {
     if (Plan === 'Mensual') {
       pendingBalance = await getPriceValue({ item: 'Mensual' });
     } else if (Plan === 'Diario') {
       pendingBalance = 0;
+      pricePerReservation = await getPriceValue({ item: 'Diario' });
     }
   } catch (error) {
     if (error.code === 'PRICE_NOT_FOUND') {
@@ -43,6 +70,7 @@ exports.financesUser = async (req, res) => {
     pendingPayment: 0,
     totalConsumption: 0,
     numberPaidReservations: 0,
+    pricePerReservation,
     paymentDate: '',
     paymentTime: '',
     reservationPaymentStatus: 'No',
@@ -69,10 +97,12 @@ exports.updateDailyPlanStartDate = async () => {
         $lte: endOfMonth
       }
     });
+    const newDailyPrice = await getPriceValue({ item: 'Diario' });
+
     const promises = financesToUpdate.map(finance => {
       const newFinanceEntry = new UserFinance({
         ...finance.toObject(),
-        _id: undefined, 
+        _id: undefined,
         startDate: moment().add(1, 'months').startOf('month').format('YYYY-MM-DD'),
         endDate: '',
         reservationCount: 0,
@@ -81,6 +111,7 @@ exports.updateDailyPlanStartDate = async () => {
         pendingPayment: 0,
         totalConsumption: 0,
         numberPaidReservations: 0,
+        pricePerReservation: newDailyPrice,
         paymentDate: '',
         paymentTime: '',
         reservationPaymentStatus: 'No',
@@ -124,24 +155,39 @@ exports.updateFinanceByUserId = async (req, res) => {
 
 exports.updateFinanceById = async (req, res) => {
   const financeId = req.params.financeId;
-  const updateData = req.body;
-
-  if (updateData.reservationPaymentStatus === 'Si') {
-    const now = new Date();
-    updateData.paymentDate = now.toLocaleDateString('es-CO');
-    updateData.paymentTime = now.toLocaleTimeString('es-CO');
-  }
+  const updateData = { ...req.body };
 
   try {
-    const updatedFinance = await UserFinance.findByIdAndUpdate(
-      financeId,
-      { $set: updateData },
-      { new: true }
-    );
+    const currentFinance = await UserFinance.findById(financeId);
 
-    if (!updatedFinance) {
+    if (!currentFinance) {
       return res.status(404).json({ message: 'Finanzas del usuario no encontradas' });
     }
+
+    const mergedFinance = { ...currentFinance.toObject(), ...updateData };
+    let normalizedUpdateData = { ...updateData };
+
+    if ((mergedFinance.Plan || '').toLowerCase() === 'diario') {
+      normalizedUpdateData = {
+        ...normalizedUpdateData,
+        ...(await recomputeDailyFinanceFields(mergedFinance)),
+      };
+    }
+
+    if (normalizedUpdateData.reservationPaymentStatus === 'Si' && (normalizedUpdateData.pendingPayment ?? 0) <= 0) {
+      const now = new Date();
+      normalizedUpdateData.paymentDate = now.toLocaleDateString('es-CO');
+      normalizedUpdateData.paymentTime = now.toLocaleTimeString('es-CO');
+    } else if (normalizedUpdateData.reservationPaymentStatus === 'No') {
+      normalizedUpdateData.paymentDate = '';
+      normalizedUpdateData.paymentTime = '';
+    }
+
+    const updatedFinance = await UserFinance.findByIdAndUpdate(
+      financeId,
+      { $set: normalizedUpdateData },
+      { new: true }
+    );
 
     res.json(updatedFinance);
   } catch (error) {
@@ -200,7 +246,9 @@ exports.getFinancesByMonth = async (req, res) => {
       startDate: { $regex: `^${prefix}` }
     }).sort({ startDate: -1 });
 
-    res.json(finances);
+    const syncedFinances = await Promise.all(finances.map(syncDailyFinanceRecord));
+
+    res.json(syncedFinances);
   } catch (error) {
     console.error('Error en getFinancesByMonth:', error);
     res.status(500).json({ error: 'Error al obtener las finanzas del mes solicitado', details: error.message });
@@ -223,11 +271,12 @@ exports.getUserFinance = (req, res) => {
   const userId = req.params.userId;
 
   UserFinance.find({ userId: userId })
-    .then((userFinance) => {
+    .then(async (userFinance) => {
       if (!userFinance) {
         return res.status(404).json({ message: 'Datos financieros no encontrados para el usuario especificado' });
       }
-      res.json(userFinance);
+      const syncedFinances = await Promise.all(userFinance.map(syncDailyFinanceRecord));
+      res.json(syncedFinances);
     })
     .catch((error) => {
       res.status(500).json({ error: 'Error al obtener la información financiera del usuario' });
