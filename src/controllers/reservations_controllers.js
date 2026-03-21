@@ -1,22 +1,24 @@
 
 const { validationResult } = require('express-validator');
+const axios = require('axios');
 const Reservation = require('../models/reservations');
 const User = require('../models/users');
 const Slot = require('../models/quotaLimits');
 const Counter = require('../models/counter')
 const UserFinance = require('../models/finances');
 const { getPriceValue } = require('../services/priceService');
+const { recomputeDailyFinanceFields, applyDailyFinanceFields } = require('../services/financeService');
 const { getCacheJSON, setCacheJSON, deleteCacheKeys } = require('../lib/cacheUtils');
 const Invitado = require('../models/invitados');
 const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
 
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
+//const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
 //const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
-const ADMIN_CHAT_ID = '6558646628';
+//const ADMIN_CHAT_ID = '6558646628';
 //const ADMIN_CHAT_ID = '2067829989';  //test bot admin
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+//const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
 const startProfiler = (label) => {
   const profilerLabel = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -417,14 +419,22 @@ exports.createReservation = async (req, res) => {
       : null;
 
     if (dailyFinance) {
-      const dailyPrice = await getPriceValue({ item: 'Diario' });
-      const paidValue = (dailyFinance.numberPaidReservations || 0) * dailyPrice;
-      const currentBalance = dailyFinance.pendingBalance || 0;
-      const pendingPaymentField = typeof dailyFinance.pendingPayment === 'number'
-        ? dailyFinance.pendingPayment
-        : currentBalance - paidValue;
+      const recalculatedDailyFinance = await recomputeDailyFinanceFields(dailyFinance);
+      const isOutdatedDailyFinance =
+        dailyFinance.reservationCount !== recalculatedDailyFinance.reservationCount ||
+        dailyFinance.numberPaidReservations !== recalculatedDailyFinance.numberPaidReservations ||
+        dailyFinance.pendingBalance !== recalculatedDailyFinance.pendingBalance ||
+        dailyFinance.pendingPayment !== recalculatedDailyFinance.pendingPayment ||
+        dailyFinance.reservationPaymentStatus !== recalculatedDailyFinance.reservationPaymentStatus ||
+        (dailyFinance.paymentDate || '') !== recalculatedDailyFinance.paymentDate ||
+        (dailyFinance.paymentTime || '') !== recalculatedDailyFinance.paymentTime;
 
-      if (pendingPaymentField > 0) {
+      if (isOutdatedDailyFinance) {
+        Object.assign(dailyFinance, recalculatedDailyFinance);
+        await dailyFinance.save();
+      }
+
+      if (recalculatedDailyFinance.pendingPayment > 0) {
         return res.status(400).json({
           code: 'PENDING_BALANCE',
           message: 'No puedes crear una nueva reserva hasta que pagues tus reservas pendientes.'
@@ -501,6 +511,24 @@ exports.createReservation = async (req, res) => {
       }
     }
 
+    // Enviar webhook a n8n
+    try {
+      const n8nWebhookUrl = 'https://developer24.app.n8n.cloud/webhook-test/9ad31f56-1aec-4559-9c6e-adbacdd53576';
+      await axios.post(n8nWebhookUrl, {
+        reservation: savedReservation,
+        user: {
+          _id: user._id,
+          FirstName: user.FirstName,
+          LastName: user.LastName,
+          Active: user.Active,
+          Plan: user.Plan,
+          Phone: user.Phone
+        }
+      });
+    } catch (error) {
+      console.error('Error al enviar webhook a n8n:', error.message);
+    }
+
     // Actualizar o crear contador de reservas
     let counter = await Counter.findOne({ userId, date: day });
 
@@ -540,15 +568,8 @@ exports.createReservation = async (req, res) => {
         if (finance.Plan === 'Mensual') {
           const monthlyPrice = await resolvePrice('Mensual');
           finance.pendingBalance = monthlyPrice;
-        } else if (
-          finance.Plan === 'Diario' &&
-          finance.reservationPaymentStatus !== 'Si' &&
-          finance.paymentDate === ''
-        ) {
-          const dailyReservationPrice = await resolvePrice('Diario');
-          const paidReservations = finance.numberPaidReservations || 0;
-          finance.pendingBalance = finance.reservationCount * dailyReservationPrice;
-          finance.pendingPayment = finance.pendingBalance - (paidReservations * dailyReservationPrice);
+        } else if (finance.Plan === 'Diario') {
+          await applyDailyFinanceFields(finance);
         }
 
         await finance.save();
@@ -788,10 +809,7 @@ exports.deleteReservation = async (req, res) => {
           const monthlyPrice = await resolvePrice('Mensual');
           finance.pendingBalance = monthlyPrice;
         } else if (finance.Plan === 'Diario') {
-          const dailyReservationPrice = await resolvePrice('Diario');
-          const paidReservations = finance.numberPaidReservations || 0;
-          finance.pendingBalance = finance.reservationCount * dailyReservationPrice;
-          finance.pendingPayment = finance.pendingBalance - (paidReservations * dailyReservationPrice);
+          await applyDailyFinanceFields(finance);
         }
 
         await finance.save();
