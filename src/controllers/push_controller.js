@@ -8,6 +8,7 @@
 //     are deleted as part of the same call so we self-heal the list.
 
 const PushSubscription = require('../models/pushSubscription');
+const NotificationLog = require('../models/notificationLog');
 const { sendPush, isConfigured, getPublicKey } = require('../lib/webPush');
 
 exports.publicKey = (req, res) => {
@@ -137,5 +138,59 @@ exports.sendBroadcast = async (req, res) => {
     }
   }
 
+  // Persist the broadcast so the admin composer can offer it as a
+  // template later. Failures are non-fatal: if the log write fails we
+  // still report the delivery numbers to the admin.
+  try {
+    await NotificationLog.create({
+      title,
+      body,
+      url,
+      audience: 'all',
+      recipients: [],
+      totals: { total: subs.length, sent, gone, failed },
+      sentBy: req.auth && req.auth.sub,
+    });
+  } catch (err) {
+    console.error('[push/send] error guardando log:', err);
+  }
+
   return res.json({ sent, gone, failed, total: subs.length });
+};
+
+/**
+ * GET /api/notifications/templates
+ *
+ * Returns the most recent unique (title, body) pairs the admin has
+ * broadcast, newest first. Used by the composer to one-click reuse a
+ * previous message. We deduplicate at query time so an admin who
+ * resends the same message ten times still gets one entry. Limit is
+ * capped at 50 server-side regardless of what the client asked for.
+ */
+exports.listTemplates = async (req, res) => {
+  const requestedLimit = Number(req.query.limit) || 10;
+  const limit = Math.max(1, Math.min(50, requestedLimit));
+
+  try {
+    const docs = await NotificationLog.aggregate([
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: { title: '$title', body: '$body' },
+          title: { $first: '$title' },
+          body: { $first: '$body' },
+          url: { $first: '$url' },
+          lastSentAt: { $first: '$createdAt' },
+          uses: { $sum: 1 },
+        },
+      },
+      { $sort: { lastSentAt: -1 } },
+      { $limit: limit },
+      { $project: { _id: 0 } },
+    ]);
+    return res.json({ templates: docs });
+  } catch (err) {
+    console.error('[push/templates] error:', err);
+    return res.status(500).json({ message: 'Error cargando plantillas' });
+  }
 };
