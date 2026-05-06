@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const invitadosController = require('../../controllers/invitados_controller');
+const { requireAuth } = require('../../middleware/auth');
+
+// Sprint 3.C.2: all guest-pass endpoints now require a valid JWT.
+router.use(requireAuth);
 
 router.get('/invitados', invitadosController.getAllInvitados);
 router.get('/invitados/usuario/:userId', invitadosController.getInvitadosByUser);
