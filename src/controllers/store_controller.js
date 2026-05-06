@@ -150,33 +150,24 @@ exports.getStoreConsumptionsByMonth = async (req, res) => {
 };
 
 
+// Returns every store consumption for a given user.
+// Mounted at GET /api/storeUser/:userId in store_routes.js. A previous
+// version of this file declared `exports.getStoreConsumption` twice - one
+// taking `:id` and looking up by consumptionId, the other taking `:userId`
+// and listing all of a user's purchases. The second declaration silently
+// overwrote the first, so the by-id variant was unreachable dead code.
+// Only the active by-userId behavior is preserved here, rewritten with
+// async/await + .lean() for consistency with the rest of the controller.
 exports.getStoreConsumption = async (req, res) => {
-  const consumptionId = req.params.id;
-
-  try {
-    const consumption = await UserStore.findById(consumptionId);
-    if (!consumption) {
-      return res.status(404).json({ message: 'Consumo de tienda no encontrado' });
-    }
-    res.json(consumption);
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener el consumo de tienda' });
-  }
-};
-
-exports.getStoreConsumption = (req, res) => {
   const userId = req.params.userId;
 
-  UserStore.find({ userId: userId })
-    .then((consumptions) => {
-      if (consumptions.length === 0) {
-        return res.status(200).json([]);
-      }
-      res.json(consumptions);
-    })
-    .catch((error) => {
-      res.status(500).json({ error: 'Error fetching user consumption data' });
-    });
+  try {
+    const consumptions = await UserStore.find({ userId }).lean();
+    res.status(200).json(consumptions);
+  } catch (error) {
+    console.error('Error fetching user consumption data:', error);
+    res.status(500).json({ error: 'Error fetching user consumption data' });
+  }
 };
 
 

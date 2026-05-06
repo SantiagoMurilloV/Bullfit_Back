@@ -1,4 +1,40 @@
-.env
-/helpers
+# dependencies
 /node_modules
+
+# env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# helpers / local scratch dirs
+/helpers
 /update
+
+# OS noise
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# editors
+.vscode/
+.idea/
+
+# test coverage
+/coverage
+
+# Firebase service-account JSONs (DEPRECATED, must be rotated and removed)
+# These were historically committed; keep them out of any future commits.
+key_service_account.json
+*-firebase-adminsdk-*.json
+bullfit-termsandconditions-firebase.json
+src/key_service_account.json
+
+# Supabase / generic credentials
+*service-account*.json
+*credentials*.json

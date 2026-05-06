@@ -14,11 +14,35 @@ const mongoose = require('mongoose');
 const moment = require('moment');
 const TelegramBot = require('node-telegram-bot-api');
 
-const TELEGRAM_TOKEN = '7409507098:AAEJ_Nb1tFXcKmRExxrTaYUD6j_ntLjjAaI'; // Bullbot
-//const TELEGRAM_TOKEN = '8185862604:AAGAVTMgKoYYretU1lGCyYf4iX2k625D6kU'; // Test Bot
-const ADMIN_CHAT_ID = '6558646628';
-//const ADMIN_CHAT_ID = '2067829989';  //test bot admin
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// ---- Telegram bot (admin notifications) -----------------------------------
+// Both values MUST come from environment variables. Previously the bot token
+// was hardcoded in this file, which leaked it through git history; the same
+// token must be rotated via @BotFather and the new value set as
+// TELEGRAM_BOT_TOKEN in DigitalOcean App Platform > Settings > Env Variables.
+//
+// Behavior:
+//   - If either env var is missing, the bot is disabled (bot === null) and
+//     callers in this controller already guard with `if (bot && ADMIN_CHAT_ID)`.
+//     Notifications are skipped silently; the rest of the API keeps working.
+//   - If both are set, polling starts. Any 409 polling errors are logged but
+//     don't crash the process (they happen when more than one instance runs
+//     against the same token).
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+let bot = null;
+if (TELEGRAM_BOT_TOKEN && ADMIN_CHAT_ID) {
+  try {
+    bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+    bot.on('polling_error', (err) => {
+      console.error('[telegram] polling error:', err.message);
+    });
+  } catch (err) {
+    console.error('[telegram] init failed:', err.message);
+    bot = null;
+  }
+} else {
+  console.warn('[telegram] disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_ADMIN_CHAT_ID missing');
+}
 
 const startProfiler = (label) => {
   const profilerLabel = `${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -511,22 +535,25 @@ exports.createReservation = async (req, res) => {
       }
     }
 
-    // Enviar webhook a n8n
-    try {
-      const n8nWebhookUrl = 'https://developer24.app.n8n.cloud/webhook-test/9ad31f56-1aec-4559-9c6e-adbacdd53576';
-      await axios.post(n8nWebhookUrl, {
-        reservation: savedReservation,
-        user: {
-          _id: user._id,
-          FirstName: user.FirstName,
-          LastName: user.LastName,
-          Active: user.Active,
-          Plan: user.Plan,
-          Phone: user.Phone
-        }
-      });
-    } catch (error) {
-      console.error('Error al enviar webhook a n8n:', error.message);
+    // Enviar webhook a n8n - URL must come from N8N_WEBHOOK_URL env var.
+    // If unset, this block is skipped silently; reservations still complete.
+    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
+    if (n8nWebhookUrl) {
+      try {
+        await axios.post(n8nWebhookUrl, {
+          reservation: savedReservation,
+          user: {
+            _id: user._id,
+            FirstName: user.FirstName,
+            LastName: user.LastName,
+            Active: user.Active,
+            Plan: user.Plan,
+            Phone: user.Phone
+          }
+        });
+      } catch (error) {
+        console.error('Error al enviar webhook a n8n:', error.message);
+      }
     }
 
     // Actualizar o crear contador de reservas
