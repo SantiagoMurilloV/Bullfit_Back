@@ -18,6 +18,7 @@ const slot = require('./src/routes/api/quotaLimits_routes');
 const termsAndConditionsRoutes = require('./src/routes/api/termsAndConditions_routes');
 const pqrs = require('./src/routes/api/pqrs_routes');
 const authRoutes = require('./src/routes/api/auth_routes');
+const pushRoutes = require('./src/routes/api/push_routes');
 
 dotenv.config();
 
@@ -143,6 +144,7 @@ app.use('/api', apiLimiter);
 // Rutas de la API
 // Auth router goes first so /api/auth/login isn't shadowed by anything else.
 app.use('/api', authRoutes);
+app.use('/api', pushRoutes);
 app.use('/api', usersRoutes);
 app.use('/api', reservationsRoutes);
 app.use('/api', financeRoutes);
