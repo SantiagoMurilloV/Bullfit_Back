@@ -21,14 +21,20 @@ app.use(express.json());
 app.use(compression());
 
 const dbUrl = process.env.MONGODB_URL;
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 8084;
+
+// Mongoose connection with explicit pool/timeout options (deprecated
+// useNewUrlParser/useUnifiedTopology removed - they are no-ops in Mongoose 6+).
 mongoose.connect(dbUrl, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
+  maxPoolSize: 20,
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
 });
 
 const db = mongoose.connection;
-db.on('error', (error) => console.error(error));
+db.on('error', (error) => console.error('MongoDB error:', error));
+db.on('disconnected', () => console.warn('MongoDB disconnected'));
+db.on('reconnected', () => console.log('MongoDB reconnected'));
 db.once('open', () => console.log('Conexión a la base de datos exitosa'));
 
 
@@ -36,6 +42,25 @@ app.use(cors({
   origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : '*',
   credentials: true,
 }));
+
+// ---- Health check (no auth, no DB write) -----------------------------------
+// Used by DigitalOcean App Platform to verify the instance is alive and the
+// DB connection is up. Keep this BEFORE the /api routes so it always responds
+// even if a route module fails to load.
+app.get('/health', (req, res) => {
+  // mongoose.connection.readyState: 0 disconnected, 1 connected,
+  // 2 connecting, 3 disconnecting.
+  const dbState = mongoose.connection.readyState;
+  const dbStateLabel = ['disconnected', 'connected', 'connecting', 'disconnecting'][dbState] || 'unknown';
+  const healthy = dbState === 1;
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ok' : 'degraded',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    db: { state: dbStateLabel, ready: healthy },
+    env: process.env.NODE_ENV || 'development',
+  });
+});
 
 // Rutas de la API
 app.use('/api', usersRoutes);
