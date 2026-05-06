@@ -7,7 +7,10 @@
 //     active subscription. Subscriptions that come back as gone (404/410)
 //     are deleted as part of the same call so we self-heal the list.
 
+const mongoose = require('mongoose');
 const PushSubscription = require('../models/pushSubscription');
+const NotificationLog = require('../models/notificationLog');
+const User = require('../models/users');
 const { sendPush, isConfigured, getPublicKey } = require('../lib/webPush');
 
 exports.publicKey = (req, res) => {
@@ -84,6 +87,7 @@ exports.sendBroadcast = async (req, res) => {
   const title = (req.body && typeof req.body.title === 'string') ? req.body.title.trim() : '';
   const body = (req.body && typeof req.body.body === 'string') ? req.body.body.trim() : '';
   const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '/';
+  const recipientsInput = (req.body && Array.isArray(req.body.recipients)) ? req.body.recipients : [];
 
   if (!title || !body) {
     return res.status(400).json({ message: 'title y body son requeridos' });
@@ -95,16 +99,54 @@ exports.sendBroadcast = async (req, res) => {
     return res.status(400).json({ message: 'body no puede exceder 240 caracteres' });
   }
 
+  // Resolve audience (Sprint 6.E):
+  //   - With recipients in the body: send only to those user ids (no Active
+  //     filter, since the admin explicitly chose them - they may want to
+  //     reach out to a paused member too).
+  //   - Without recipients (broadcast): only Active=Si users. Inactive
+  //     accounts (cancelled/suspended) should not receive marketing pushes.
+  let audience = 'all';
+  let userFilter = null;
+  let validRecipientIds = [];
+
+  if (recipientsInput.length > 0) {
+    // Coerce to ObjectId, drop anything malformed.
+    validRecipientIds = recipientsInput
+      .filter((id) => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+    if (validRecipientIds.length === 0) {
+      return res.status(400).json({ message: 'recipients no contiene ids válidos' });
+    }
+    audience = 'users';
+    userFilter = { _id: { $in: validRecipientIds } };
+  } else {
+    audience = 'all';
+    userFilter = { Active: 'Sí' };
+  }
+
+  let targetUserIds;
+  try {
+    const targetUsers = await User.find(userFilter).select('_id').lean();
+    targetUserIds = targetUsers.map((u) => u._id);
+  } catch (err) {
+    console.error('[push/send] error cargando usuarios destino:', err);
+    return res.status(500).json({ message: 'Error cargando usuarios' });
+  }
+
+  if (targetUserIds.length === 0) {
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, audience, eligibleUsers: 0 });
+  }
+
   let subs;
   try {
-    subs = await PushSubscription.find().lean();
+    subs = await PushSubscription.find({ userId: { $in: targetUserIds } }).lean();
   } catch (err) {
     console.error('[push/send] error cargando suscripciones:', err);
     return res.status(500).json({ message: 'Error cargando suscripciones' });
   }
 
   if (subs.length === 0) {
-    return res.json({ sent: 0, gone: 0, failed: 0, total: 0 });
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, audience, eligibleUsers: targetUserIds.length });
   }
 
   const payload = { title, body, url };
@@ -137,5 +179,88 @@ exports.sendBroadcast = async (req, res) => {
     }
   }
 
-  return res.json({ sent, gone, failed, total: subs.length });
+  // Persist the broadcast so the admin composer can offer it as a
+  // template later. Failures are non-fatal: if the log write fails we
+  // still report the delivery numbers to the admin.
+  try {
+    await NotificationLog.create({
+      title,
+      body,
+      url,
+      audience,
+      recipients: audience === 'users' ? validRecipientIds : [],
+      totals: { total: subs.length, sent, gone, failed },
+      sentBy: req.auth && req.auth.sub,
+    });
+  } catch (err) {
+    console.error('[push/send] error guardando log:', err);
+  }
+
+  return res.json({ sent, gone, failed, total: subs.length, audience, eligibleUsers: targetUserIds.length });
+};
+
+/**
+ * GET /api/notifications/recipients
+ *
+ * Returns the list of users the admin is allowed to target with a push
+ * notification, ordered by name. The frontend renders this in the
+ * "Específico" tab so the admin can pick one or several recipients.
+ *
+ * We expose only Active=Si users by default (consistent with the broadcast
+ * audience), but accept ?includeInactive=1 to include the rest in case the
+ * admin wants to reach a paused member specifically.
+ *
+ * Auth: requireAdmin (applied at the router).
+ */
+exports.listRecipients = async (req, res) => {
+  const includeInactive = req.query.includeInactive === '1' || req.query.includeInactive === 'true';
+  const filter = includeInactive ? {} : { Active: 'Sí' };
+
+  try {
+    const users = await User.find(filter)
+      .select('FirstName LastName Phone Active Plan')
+      .sort({ FirstName: 1, LastName: 1 })
+      .lean();
+    return res.json({ users });
+  } catch (err) {
+    console.error('[push/recipients] error:', err);
+    return res.status(500).json({ message: 'Error cargando usuarios' });
+  }
+};
+
+/**
+ * GET /api/notifications/templates
+ *
+ * Returns the most recent unique (title, body) pairs the admin has
+ * broadcast, newest first. Used by the composer to one-click reuse a
+ * previous message. We deduplicate at query time so an admin who
+ * resends the same message ten times still gets one entry. Limit is
+ * capped at 50 server-side regardless of what the client asked for.
+ */
+exports.listTemplates = async (req, res) => {
+  const requestedLimit = Number(req.query.limit) || 10;
+  const limit = Math.max(1, Math.min(50, requestedLimit));
+
+  try {
+    const docs = await NotificationLog.aggregate([
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: { title: '$title', body: '$body' },
+          title: { $first: '$title' },
+          body: { $first: '$body' },
+          url: { $first: '$url' },
+          lastSentAt: { $first: '$createdAt' },
+          uses: { $sum: 1 },
+        },
+      },
+      { $sort: { lastSentAt: -1 } },
+      { $limit: limit },
+      { $project: { _id: 0 } },
+    ]);
+    return res.json({ templates: docs });
+  } catch (err) {
+    console.error('[push/templates] error:', err);
+    return res.status(500).json({ message: 'Error cargando plantillas' });
+  }
 };

@@ -20,7 +20,9 @@ router.get('/push/public-key', requireAuth, pushController.publicKey);
 router.post('/push/subscribe', requireAuth, pushController.subscribe);
 router.post('/push/unsubscribe', requireAuth, pushController.unsubscribe);
 
-// Admin-only broadcast.
+// Admin-only.
 router.post('/notifications', requireAdmin, pushController.sendBroadcast);
+router.get('/notifications/templates', requireAdmin, pushController.listTemplates);
+router.get('/notifications/recipients', requireAdmin, pushController.listRecipients);
 
 module.exports = router;
