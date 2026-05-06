@@ -27,20 +27,11 @@ const queueUserCacheInvalidation = (userId) => {
   deleteCacheKeys(...keys);
 };
 
-exports.login = (req, res) => {
-  const { username, password } = req.body;
-
-
-  if (username === 'usuario' && password === 'contrasena') {
-
-    const token = 'token_de_autenticacion_generado'; 
-    res.json({ token });
-  } else {
-
-    res.status(401).json({ error: 'Credenciales de inicio de sesión incorrectas' });
-  }
-};
-
+// NOTE: a previous `exports.login` lived here with hardcoded literal
+// credentials ('usuario'/'contrasena') and a static fake token. It was never
+// exposed in users_routes.js and is removed in this commit. Real auth lands
+// in the upcoming /api/auth/login endpoint (JWT-based) implemented as part
+// of the security-p0 hardening sprint.
 
 exports.getAllUsers = async (req, res) => {
   const profiler = startProfiler('getAllUsers');
@@ -111,7 +102,6 @@ exports.createUser = async (req, res) => {
     Phone,
     IdentificationNumber,
     registrationDate,
-    registrationDate,
     nameEmergency,
     LastNameEmergency,
     PhoneEmergency
@@ -133,16 +123,28 @@ exports.createUser = async (req, res) => {
 exports.updateUserStatus = async (req, res) => {
   const profiler = startProfiler('updateUserStatus');
   const userId = req.params.userId;
-  const { Active, Plan, FirstName, LastName, Phone, IdentificationNumber,registrationDatenameEmergency,
+  // Bug fix: the previous version had `registrationDatenameEmergency` (a single
+  // missing comma between `registrationDate` and `nameEmergency`). That string
+  // is not a real field on the user schema, so updates silently lost both the
+  // registrationDate AND nameEmergency values, while writing a stray property
+  // that mongoose then ignored. Splitting back into two real fields restores
+  // the original intent and makes those columns updatable again.
+  const {
+    Active, Plan, FirstName, LastName, Phone, IdentificationNumber,
+    registrationDate, nameEmergency,
     LastNameEmergency,
-    PhoneEmergency} = req.body;
+    PhoneEmergency,
+  } = req.body;
 
   try {
     const user = await User.findByIdAndUpdate(
       userId,
-      { Active, Plan, FirstName, LastName, Phone, IdentificationNumber,registrationDatenameEmergency,
+      {
+        Active, Plan, FirstName, LastName, Phone, IdentificationNumber,
+        registrationDate, nameEmergency,
         LastNameEmergency,
-        PhoneEmergency},
+        PhoneEmergency,
+      },
       { new: true }
     );
 
