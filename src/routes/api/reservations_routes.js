@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const reservationsControllers = require('../../controllers/reservations_controllers');
+const { requireAuth } = require('../../middleware/auth');
+
+// Sprint 3.C.2: all reservation endpoints now require a valid JWT.
+router.use(requireAuth);
 
 router.get('/reservations', reservationsControllers.getAllReservations);
 router.get('/reservations/week', reservationsControllers.getReservationsByWeek);

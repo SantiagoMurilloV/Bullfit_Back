@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const storeController = require('../../controllers/store_controller');
+const { requireAuth } = require('../../middleware/auth');
+
+// Sprint 3.C.2: all store endpoints now require a valid JWT.
+router.use(requireAuth);
 
 router.post('/store', storeController.createStoreConsumption);
 router.put('/store/:id', storeController.updateStoreConsumption);
