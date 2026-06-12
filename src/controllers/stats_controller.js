@@ -216,15 +216,24 @@ const getStats = async (req, res) => {
       ]),
     ]);
 
-    // Normalize day-of-week
+    // Normalize day-of-week. The `dayOfWeek` field in the DB is a mess of
+    // English/Spanish, accented/unaccented values ("Wednesday", "Miércoles",
+    // "Miercoles"). We canonicalize by stripping accents + lowercasing so all
+    // variants collapse onto a single bucket. Without this, ~3800 "Miércoles"
+    // reservations fell through and Wednesday looked nearly empty.
     const dayOrder = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
-    const englishMap = {
-      Monday: 'Lunes', Tuesday: 'Martes', Wednesday: 'Miercoles',
-      Thursday: 'Jueves', Friday: 'Viernes', Saturday: 'Sabado',
+    const stripAccents = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const dayCanonical = {
+      monday: 'Lunes', tuesday: 'Martes', wednesday: 'Miercoles',
+      thursday: 'Jueves', friday: 'Viernes', saturday: 'Sabado', sunday: 'Domingo',
+      lunes: 'Lunes', martes: 'Martes', miercoles: 'Miercoles',
+      jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sabado', domingo: 'Domingo',
     };
     const dayMap = {};
     reservationsByDay.forEach((d) => {
-      const key = englishMap[d._id] || d._id;
+      const raw = (d._id || '').toString().trim();
+      const norm = stripAccents(raw).toLowerCase();
+      const key = dayCanonical[norm] || raw;
       dayMap[key] = (dayMap[key] || 0) + d.count;
     });
 

@@ -20,6 +20,9 @@ const pqrs = require('./src/routes/api/pqrs_routes');
 const authRoutes = require('./src/routes/api/auth_routes');
 const pushRoutes = require('./src/routes/api/push_routes');
 const statsRoutes = require('./src/routes/api/stats_routes');
+const gamificationRoutes = require('./src/routes/api/gamification_routes');
+const leadsRoutes = require('./src/routes/api/leads_routes');
+const { startInactivityJob } = require('./src/jobs/inactivityJob');
 
 dotenv.config();
 
@@ -66,7 +69,10 @@ const db = mongoose.connection;
 db.on('error', (error) => console.error('MongoDB error:', error));
 db.on('disconnected', () => console.warn('MongoDB disconnected'));
 db.on('reconnected', () => console.log('MongoDB reconnected'));
-db.once('open', () => console.log('Conexión a la base de datos exitosa'));
+db.once('open', () => {
+  console.log('Conexión a la base de datos exitosa');
+  startInactivityJob();
+});
 
 
 // ---- CORS ------------------------------------------------------------------
@@ -80,31 +86,41 @@ db.once('open', () => console.log('Conexión a la base de datos exitosa'));
 // (https://bullfit-app-v2-0-*-santiagomurilloval.vercel.app) without
 // relaxing security to "*". Requests with no Origin header (server-to-server,
 // curl, mobile webviews) are allowed through to keep existing flows working.
-const PROD_VERCEL_ORIGIN = 'https://bullfit-app-v2-0.vercel.app';
+// Stable production frontends. Both keep working side by side: the original
+// Vercel domain and the new custom domain (app.bullfit.co).
+const PROD_ORIGINS = [
+  'https://bullfit-app-v2-0.vercel.app',
+  'https://app.bullfit.co',
+  // Public landing — posts new leads to POST /api/leads.
+  'https://bullfit.co',
+  'https://www.bullfit.co',
+];
 const VERCEL_PREVIEW_REGEX = /^https:\/\/bullfit-app-v2-0(-[a-z0-9-]+)?\.vercel\.app$/i;
 const LOCAL_DEV_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ];
 
+// CORS_ORIGINS (if set) is now ADDITIVE on top of the built-in allow list,
+// instead of replacing it. This guarantees the known production frontends keep
+// working even if the env var is set to something narrower.
 const explicitWhitelist = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
-  : null;
+  : [];
+
+const isAllowedOrigin = (origin) => {
+  if (PROD_ORIGINS.includes(origin)) return true;
+  if (VERCEL_PREVIEW_REGEX.test(origin)) return true;
+  if (LOCAL_DEV_ORIGINS.includes(origin)) return true;
+  if (explicitWhitelist.includes(origin)) return true;
+  return false;
+};
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow same-origin / non-browser callers (no Origin header).
     if (!origin) return callback(null, true);
-
-    if (explicitWhitelist) {
-      return callback(null, explicitWhitelist.includes(origin));
-    }
-
-    if (origin === PROD_VERCEL_ORIGIN) return callback(null, true);
-    if (VERCEL_PREVIEW_REGEX.test(origin)) return callback(null, true);
-    if (LOCAL_DEV_ORIGINS.includes(origin)) return callback(null, true);
-
-    return callback(null, false);
+    return callback(null, isAllowedOrigin(origin));
   },
   credentials: true,
 }));
@@ -145,6 +161,9 @@ app.use('/api', apiLimiter);
 // Rutas de la API
 // Auth router goes first so /api/auth/login isn't shadowed by anything else.
 app.use('/api', authRoutes);
+// Leads BEFORE the routers that apply router-level requireAuth, so the public
+// POST /api/leads (landing form) isn't swallowed by their global guard.
+app.use('/api', leadsRoutes);
 // Stats route before authenticated routers (has its own password gate in frontend).
 app.use('/api', statsRoutes);
 app.use('/api', pushRoutes);
@@ -158,6 +177,7 @@ app.use('/api', termsAndConditionsRoutes);
 app.use('/api', slot);
 app.use('/api', pqrs);
 app.use('/api', invitadosRoutes);
+app.use('/api', gamificationRoutes);
 
 // ---- 404 handler -----------------------------------------------------------
 // Anything that wasn't caught by the routers above. Keep before the error

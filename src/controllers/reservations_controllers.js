@@ -3,6 +3,7 @@ const { validationResult } = require('express-validator');
 const axios = require('axios');
 const Reservation = require('../models/reservations');
 const User = require('../models/users');
+const { updateUserStreak } = require('../services/gamificationService');
 const Slot = require('../models/quotaLimits');
 const Counter = require('../models/counter')
 const UserFinance = require('../models/finances');
@@ -368,6 +369,14 @@ exports.updateUserTrainingType = async (req, res) => {
       hour: updatedReservation.hour,
     }));
     queueReservationCacheInvalidation(updatedReservation.userId);
+
+    // Recalculate gamification streak whenever attendance changes.
+    // Fire-and-forget: don't block the response.
+    if (Attendance) {
+      updateUserStreak(updatedReservation.userId.toString()).catch((err) =>
+        console.error('[gamification] streak update failed:', err.message)
+      );
+    }
 
     res.status(200).json(updatedReservation);
   } catch (error) {
