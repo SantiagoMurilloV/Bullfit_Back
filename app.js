@@ -21,6 +21,7 @@ const authRoutes = require('./src/routes/api/auth_routes');
 const pushRoutes = require('./src/routes/api/push_routes');
 const statsRoutes = require('./src/routes/api/stats_routes');
 const gamificationRoutes = require('./src/routes/api/gamification_routes');
+const leadsRoutes = require('./src/routes/api/leads_routes');
 const { startInactivityJob } = require('./src/jobs/inactivityJob');
 
 dotenv.config();
@@ -90,6 +91,9 @@ db.once('open', () => {
 const PROD_ORIGINS = [
   'https://bullfit-app-v2-0.vercel.app',
   'https://app.bullfit.co',
+  // Public landing — posts new leads to POST /api/leads.
+  'https://bullfit.co',
+  'https://www.bullfit.co',
 ];
 const VERCEL_PREVIEW_REGEX = /^https:\/\/bullfit-app-v2-0(-[a-z0-9-]+)?\.vercel\.app$/i;
 const LOCAL_DEV_ORIGINS = [
@@ -157,6 +161,9 @@ app.use('/api', apiLimiter);
 // Rutas de la API
 // Auth router goes first so /api/auth/login isn't shadowed by anything else.
 app.use('/api', authRoutes);
+// Leads BEFORE the routers that apply router-level requireAuth, so the public
+// POST /api/leads (landing form) isn't swallowed by their global guard.
+app.use('/api', leadsRoutes);
 // Stats route before authenticated routers (has its own password gate in frontend).
 app.use('/api', statsRoutes);
 app.use('/api', pushRoutes);
