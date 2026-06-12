@@ -11,6 +11,7 @@ const mongoose = require('mongoose');
 const PushSubscription = require('../models/pushSubscription');
 const NotificationLog = require('../models/notificationLog');
 const NotificationTemplate = require('../models/notificationTemplate');
+const UserNotification = require('../models/userNotification');
 const User = require('../models/users');
 const { sendPush, isConfigured, getPublicKey } = require('../lib/webPush');
 
@@ -135,7 +136,20 @@ exports.sendBroadcast = async (req, res) => {
   }
 
   if (targetUserIds.length === 0) {
-    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, audience, eligibleUsers: 0 });
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox: 0, audience, eligibleUsers: 0 });
+  }
+
+  // Persist to each target user's in-app inbox (the bell history). This is
+  // independent of web push: the user sees the message in their bell even if
+  // they never granted browser push permission. Without this the bell history
+  // stayed empty for admin-sent notifications.
+  let inbox = 0;
+  try {
+    const docs = targetUserIds.map((id) => ({ userId: id, title, body, type: 'system', url }));
+    const inserted = await UserNotification.insertMany(docs, { ordered: false });
+    inbox = inserted.length;
+  } catch (err) {
+    console.error('[push/send] error guardando bandejas:', err);
   }
 
   let subs;
@@ -147,7 +161,7 @@ exports.sendBroadcast = async (req, res) => {
   }
 
   if (subs.length === 0) {
-    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, audience, eligibleUsers: targetUserIds.length });
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox, audience, eligibleUsers: targetUserIds.length });
   }
 
   const payload = { title, body, url };
@@ -197,7 +211,7 @@ exports.sendBroadcast = async (req, res) => {
     console.error('[push/send] error guardando log:', err);
   }
 
-  return res.json({ sent, gone, failed, total: subs.length, audience, eligibleUsers: targetUserIds.length });
+  return res.json({ sent, gone, failed, total: subs.length, inbox, audience, eligibleUsers: targetUserIds.length });
 };
 
 /**
