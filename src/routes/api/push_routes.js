@@ -23,6 +23,8 @@ router.post('/push/unsubscribe', requireAuth, pushController.unsubscribe);
 // Admin-only.
 router.post('/notifications', requireAdmin, pushController.sendBroadcast);
 router.get('/notifications/templates', requireAdmin, pushController.listTemplates);
+router.post('/notifications/templates', requireAdmin, pushController.createTemplate);
+router.delete('/notifications/templates/:id', requireAdmin, pushController.deleteTemplate);
 router.get('/notifications/recipients', requireAdmin, pushController.listRecipients);
 
 module.exports = router;

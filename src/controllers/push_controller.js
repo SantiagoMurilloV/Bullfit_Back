@@ -10,6 +10,7 @@
 const mongoose = require('mongoose');
 const PushSubscription = require('../models/pushSubscription');
 const NotificationLog = require('../models/notificationLog');
+const NotificationTemplate = require('../models/notificationTemplate');
 const User = require('../models/users');
 const { sendPush, isConfigured, getPublicKey } = require('../lib/webPush');
 
@@ -231,36 +232,91 @@ exports.listRecipients = async (req, res) => {
 /**
  * GET /api/notifications/templates
  *
- * Returns the most recent unique (title, body) pairs the admin has
- * broadcast, newest first. Used by the composer to one-click reuse a
- * previous message. We deduplicate at query time so an admin who
- * resends the same message ten times still gets one entry. Limit is
- * capped at 50 server-side regardless of what the client asked for.
+ * Returns the admin's saved favorite templates, newest first. These are ONLY
+ * the messages explicitly starred in the composer (NotificationTemplate), not
+ * the full send history. Limit is capped at 50 server-side.
  */
 exports.listTemplates = async (req, res) => {
-  const requestedLimit = Number(req.query.limit) || 10;
+  const requestedLimit = Number(req.query.limit) || 20;
   const limit = Math.max(1, Math.min(50, requestedLimit));
 
   try {
-    const docs = await NotificationLog.aggregate([
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: { title: '$title', body: '$body' },
-          title: { $first: '$title' },
-          body: { $first: '$body' },
-          url: { $first: '$url' },
-          lastSentAt: { $first: '$createdAt' },
-          uses: { $sum: 1 },
-        },
-      },
-      { $sort: { lastSentAt: -1 } },
-      { $limit: limit },
-      { $project: { _id: 0 } },
-    ]);
+    const docs = await NotificationTemplate.find({})
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .select('title body url createdAt')
+      .lean();
     return res.json({ templates: docs });
   } catch (err) {
     console.error('[push/templates] error:', err);
     return res.status(500).json({ message: 'Error cargando plantillas' });
+  }
+};
+
+/**
+ * POST /api/notifications/templates
+ * Body: { title, body, url? }
+ *
+ * Saves a message as a favorite template (the composer's ⭐ button). If a
+ * template with the same (title, body) already exists, that one is returned
+ * instead of creating a duplicate.
+ */
+exports.createTemplate = async (req, res) => {
+  const title = (req.body && typeof req.body.title === 'string') ? req.body.title.trim() : '';
+  const body = (req.body && typeof req.body.body === 'string') ? req.body.body.trim() : '';
+  const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '/';
+
+  if (!title || !body) {
+    return res.status(400).json({ message: 'title y body son requeridos' });
+  }
+  if (title.length > 80) {
+    return res.status(400).json({ message: 'title no puede exceder 80 caracteres' });
+  }
+  if (body.length > 240) {
+    return res.status(400).json({ message: 'body no puede exceder 240 caracteres' });
+  }
+
+  try {
+    // Idempotent on (title, body): reuse the existing favorite if present.
+    const existing = await NotificationTemplate.findOne({ title, body }).lean();
+    if (existing) {
+      return res.status(200).json({ template: existing, created: false });
+    }
+    const tpl = await NotificationTemplate.create({
+      title,
+      body,
+      url,
+      createdBy: req.auth && req.auth.sub,
+    });
+    return res.status(201).json({ template: tpl, created: true });
+  } catch (err) {
+    // Unique-index race: another request created the same pair first.
+    if (err && err.code === 11000) {
+      const existing = await NotificationTemplate.findOne({ title, body }).lean();
+      return res.status(200).json({ template: existing, created: false });
+    }
+    console.error('[push/templates create] error:', err);
+    return res.status(500).json({ message: 'Error guardando la plantilla' });
+  }
+};
+
+/**
+ * DELETE /api/notifications/templates/:id
+ * Removes a saved favorite template.
+ */
+exports.deleteTemplate = async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: 'id inválido' });
+  }
+  try {
+    const deleted = await NotificationTemplate.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Plantilla no encontrada' });
+    }
+    return res.status(204).end();
+  } catch (err) {
+    console.error('[push/templates delete] error:', err);
+    return res.status(500).json({ message: 'Error eliminando la plantilla' });
   }
 };
