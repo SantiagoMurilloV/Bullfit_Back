@@ -22,7 +22,9 @@ const pushRoutes = require('./src/routes/api/push_routes');
 const statsRoutes = require('./src/routes/api/stats_routes');
 const gamificationRoutes = require('./src/routes/api/gamification_routes');
 const leadsRoutes = require('./src/routes/api/leads_routes');
+const eventsRoutes = require('./src/routes/api/events_routes');
 const { startInactivityJob } = require('./src/jobs/inactivityJob');
+const { startMembershipExpiryJob } = require('./src/jobs/membershipExpiryJob');
 
 dotenv.config();
 
@@ -72,6 +74,7 @@ db.on('reconnected', () => console.log('MongoDB reconnected'));
 db.once('open', () => {
   console.log('Conexión a la base de datos exitosa');
   startInactivityJob();
+  startMembershipExpiryJob();
 });
 
 
@@ -164,6 +167,10 @@ app.use('/api', authRoutes);
 // Leads BEFORE the routers that apply router-level requireAuth, so the public
 // POST /api/leads (landing form) isn't swallowed by their global guard.
 app.use('/api', leadsRoutes);
+// SSE stream for live reservation updates. Has its own query-token auth (the
+// browser EventSource can't send the Authorization header), so it must NOT sit
+// behind the header-based requireAuth of the reservations router.
+app.use('/api', eventsRoutes);
 // Stats route before authenticated routers (has its own password gate in frontend).
 app.use('/api', statsRoutes);
 app.use('/api', pushRoutes);

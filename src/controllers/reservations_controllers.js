@@ -10,6 +10,7 @@ const UserFinance = require('../models/finances');
 const { getPriceValue } = require('../services/priceService');
 const { recomputeDailyFinanceFields, applyDailyFinanceFields } = require('../services/financeService');
 const { getCacheJSON, setCacheJSON, deleteCacheKeys } = require('../lib/cacheUtils');
+const { emitReservationEvent } = require('../lib/reservationEvents');
 const Invitado = require('../models/invitados');
 const mongoose = require('mongoose');
 const moment = require('moment');
@@ -378,6 +379,9 @@ exports.updateUserTrainingType = async (req, res) => {
       );
     }
 
+    // Notify open admin agendas (SSE) so they refresh live. Fire-and-forget.
+    emitReservationEvent({ type: 'updated', reservation: updatedReservation });
+
     res.status(200).json(updatedReservation);
   } catch (error) {
     console.error(error);
@@ -627,6 +631,9 @@ exports.createReservation = async (req, res) => {
     await addReservationToCache(cacheEntry);
     queueReservationCacheInvalidation(userId);
 
+    // Notify open admin agendas (SSE) so they refresh live. Fire-and-forget.
+    emitReservationEvent({ type: 'created', reservation: savedReservation });
+
     // Éxito
     return res.status(201).json(savedReservation);
 
@@ -859,6 +866,9 @@ exports.deleteReservation = async (req, res) => {
 
     await removeReservationCacheEntry(reservationId);
     queueReservationCacheInvalidation(deletedReservation.userId);
+
+    // Notify open admin agendas (SSE) so they refresh live. Fire-and-forget.
+    emitReservationEvent({ type: 'deleted', reservation: deletedReservation });
 
     res.status(200).json(response);
   } catch (error) {
