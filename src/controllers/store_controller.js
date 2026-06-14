@@ -2,6 +2,17 @@ const UserStore = require('../models/store');
 const User = require('../models/users');
 const moment = require('moment-timezone');
 const { getPriceValue } = require('../services/priceService');
+const { notifyUser } = require('../lib/notifyUser');
+
+// Store items are stored as English keys; show their Spanish name in the
+// notification. Same mapping the frontend uses (Statistics.jsx ITEM_LABELS).
+const ITEM_LABELS_ES = {
+  waters: 'Aguas',
+  PreWorkouts: 'Preentrenos',
+  proteins: 'Proteínas',
+  guestPass: 'Invitado',
+};
+const itemLabelEs = (item) => ITEM_LABELS_ES[item] || item || 'tu compra';
 
 
 exports.createStoreConsumption = async (req, res) => {
@@ -51,11 +62,15 @@ exports.updateStoreConsumption = async (req, res) => {
 
   try {
     let finalValue = value;
+    const isGuestPass = typeof item === 'string' && item.toLowerCase() === 'guestpass';
 
-    if (typeof item === 'string' && item.toLowerCase() === 'guestpass') {
+    if (isGuestPass) {
       const guestPrice = await getPriceValue({ item: 'guestPass' });
       finalValue = guestPrice * (Number(quantity) || 0);
     }
+
+    // Read the previous status so we only notify on the No -> Si transition.
+    const previous = await UserStore.findById(consumptionId).select('paymentStatus userId').lean();
 
     const updatedConsumption = await UserStore.findByIdAndUpdate(
       consumptionId,
@@ -65,6 +80,24 @@ exports.updateStoreConsumption = async (req, res) => {
 
     if (!updatedConsumption) {
       return res.status(404).json({ message: 'Consumo de tienda no encontrado' });
+    }
+
+    // Notify the user when the admin confirms the store consumption payment.
+    // Skip guest passes: those belong to a guest profile, not an app user.
+    const wasConfirmed = previous && previous.paymentStatus === 'Si';
+    if (paymentStatus === 'Si' && !wasConfirmed && !isGuestPass && updatedConsumption.userId) {
+      // Look up the user's name, then notify (fire-and-forget).
+      (async () => {
+        const user = await User.findById(updatedConsumption.userId).select('FirstName').lean();
+        const name = (user && user.FirstName) ? user.FirstName : '';
+        const greeting = name ? ` ${name}` : '';
+        await notifyUser(updatedConsumption.userId, {
+          title: 'Pago confirmado ✅',
+          body: `¡Gracias${greeting}! 🙌 Confirmamos el pago de ${itemLabelEs(item)} en la tienda. ¡Te esperamos en Bullfit!`,
+          url: '/',
+          type: 'system',
+        });
+      })().catch((err) => console.error('[store] notifyUser failed:', err.message));
     }
 
     res.json(updatedConsumption);

@@ -1,7 +1,9 @@
 const moment = require('moment');
 const UserFinance = require('../models/finances');
+const User = require('../models/users');
 const { getPriceValue } = require('../services/priceService');
 const { recomputeDailyFinanceFields } = require('../services/financeService');
+const { notifyUser } = require('../lib/notifyUser');
 
 const syncDailyFinanceRecord = async (finance) => {
   if ((finance.Plan || '').toLowerCase() !== 'diario') {
@@ -188,6 +190,26 @@ exports.updateFinanceById = async (req, res) => {
       { $set: normalizedUpdateData },
       { new: true }
     );
+
+    // Notify the user only when the admin flips this payment to confirmed
+    // (No -> Si). Avoids re-notifying on unrelated edits or repeated saves.
+    const wasConfirmed = currentFinance.reservationPaymentStatus === 'Si';
+    const nowConfirmed = normalizedUpdateData.reservationPaymentStatus === 'Si';
+    if (nowConfirmed && !wasConfirmed) {
+      // Look up the user's name, then notify (fire-and-forget so the response
+      // isn't delayed by the extra read + push).
+      (async () => {
+        const user = await User.findById(currentFinance.userId).select('FirstName').lean();
+        const name = (user && user.FirstName) ? user.FirstName : '';
+        const greeting = name ? ` ${name}` : '';
+        await notifyUser(currentFinance.userId, {
+          title: 'Pago confirmado ✅',
+          body: `Muchas gracias${greeting} 💪 Recibimos tu pago de mensualidad. Ya estás al día — ahora a entrenar sin excusas. ¡Te esperamos en Bullfit!`,
+          url: '/',
+          type: 'system',
+        });
+      })().catch((err) => console.error('[finances] notifyUser failed:', err.message));
+    }
 
     res.json(updatedFinance);
   } catch (error) {
