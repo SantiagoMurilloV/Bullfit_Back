@@ -17,8 +17,13 @@ const moment = require('moment-timezone');
 const Reservation = require('../models/reservations');
 const UserStreak = require('../models/userStreak');
 const { isBusinessDay } = require('../utils/colombianHolidays');
+const User = require('../models/users');
+const { newlyUnlockedTrophies, TROPHIES_START } = require('../lib/trophies');
+const { notifyUser } = require('../lib/notifyUser');
 
 const TZ = 'America/Bogota';
+
+const MONTH_LABELS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -46,10 +51,14 @@ function weekKey(dateStr) {
  * @returns {Object} { currentStreak, longestStreak, totalActivities,
  *                     streakStartDate, lastAttendedDate }
  */
-async function computeStreak(userId) {
-  // Fetch ALL attended reservations, oldest first.
+async function computeStreak(userId, sinceDay = null) {
+  // Fetch attended reservations, oldest first. When `sinceDay` is given
+  // (YYYY-MM-DD), only count attendance on/after it — used for the trophy
+  // streak, which starts counting from the launch date.
+  const query = { userId, Attendance: 'Si' };
+  if (sinceDay) query.day = { $gte: sinceDay };
   const attended = await Reservation.find(
-    { userId, Attendance: 'Si' },
+    query,
     { day: 1, _id: 0 },
   ).sort({ day: 1 }).lean();
 
@@ -191,18 +200,113 @@ async function computeStreak(userId) {
  * Called after every attendance update.
  */
 async function updateUserStreak(userId) {
+  // Capture the previous trophy streak so we can detect newly-crossed trophy
+  // thresholds after recomputing.
+  const existing = await UserStreak.findOne(
+    { userId },
+    { trophyLongestStreak: 1 },
+  ).lean();
+  const prevTrophy = existing ? (existing.trophyLongestStreak || 0) : 0;
+
+  // All-time streak (drives the calendar / "mejor racha").
   const data = await computeStreak(userId);
+  // Trophy streak: only counts from the launch date.
+  const trophyData = await computeStreak(userId, TROPHIES_START);
+  const trophyLongest = trophyData.longestStreak || 0;
+
   const streakDoc = await UserStreak.findOneAndUpdate(
     { userId },
     {
       $set: {
         ...data,
+        trophyLongestStreak: trophyLongest,
         lastComputedAt: new Date(),
       },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+
+  // Celebrate any trophy whose threshold the user just crossed — but only once
+  // the trophy system is live (TROPHIES_START). Before that, no unlock fires.
+  const trophiesLive = moment.tz(TZ).format('YYYY-MM-DD') >= TROPHIES_START;
+  const unlocked = trophiesLive ? newlyUnlockedTrophies(prevTrophy, trophyLongest) : [];
+
+  if (unlocked.length) {
+    // Resolve the achiever's name and the admin list once for this batch.
+    let userName = '';
+    let admins = [];
+    try {
+      const u = await User.findById(userId).select('FirstName LastName').lean();
+      if (u) userName = `${u.FirstName || ''} ${u.LastName || ''}`.trim();
+      admins = await User.find({ role: 'admin' }).select('_id').lean();
+    } catch (err) {
+      console.error('[gamification] trophy notify lookup failed:', err.message);
+    }
+
+    for (const t of unlocked) {
+      // → the user who unlocked it
+      notifyUser(userId, {
+        title: '¡Nuevo trofeo! 🏆',
+        body: `Desbloqueaste "${t.name}" (${t.label} de racha). ${t.description}`,
+        url: '/#trofeos',
+        type: 'achievement',
+        dedupeKey: `trophy-${userId}-${t.key}`,
+      }).catch((err) => console.error('[gamification] trophy notify failed:', err.message));
+
+      // → every admin
+      for (const a of admins) {
+        notifyUser(a._id, {
+          title: 'Medalla desbloqueada 🏆',
+          body: `${userName || 'Un usuario'} desbloqueó "${t.name}" (${t.label} de racha).`,
+          url: '/',
+          type: 'achievement',
+          dedupeKey: `trophy-admin-${a._id}-${userId}-${t.key}`,
+        }).catch((err) => console.error('[gamification] admin trophy notify failed:', err.message));
+      }
+    }
+  }
+
   return streakDoc;
+}
+
+// ─── Monthly Attendance (constancy chart) ────────────────────────────────────
+
+/**
+ * Count attended sessions per calendar month for the last `months` months
+ * (including the current one), oldest first. Used by the profile constancy
+ * chart.
+ *
+ * @param {string} userId
+ * @param {number} months  - how many months back (default 3, max 12)
+ * @returns {Promise<Array<{ month: string, label: string, attended: number }>>}
+ */
+async function getMonthlyAttendance(userId, months = 3) {
+  const n = Math.max(1, Math.min(Number(months) || 3, 12));
+  const now = moment.tz(TZ);
+
+  // Build empty buckets for the last n months, chronological.
+  const buckets = [];
+  const indexByMonth = {};
+  for (let i = n - 1; i >= 0; i--) {
+    const m = now.clone().subtract(i, 'months');
+    const ym = m.format('YYYY-MM');
+    indexByMonth[ym] = buckets.length;
+    buckets.push({ month: ym, label: MONTH_LABELS_ES[m.month()], attended: 0 });
+  }
+
+  const startDay = `${buckets[0].month}-01`;
+  const attended = await Reservation.find(
+    { userId, Attendance: 'Si', day: { $gte: startDay } },
+    { day: 1, _id: 0 },
+  ).lean();
+
+  for (const r of attended) {
+    const ym = (r.day || '').slice(0, 7);
+    const idx = indexByMonth[ym];
+    if (idx !== undefined) buckets[idx].attended += 1;
+  }
+
+  return buckets;
 }
 
 // ─── Calendar Builder ────────────────────────────────────────────────────────
@@ -303,8 +407,19 @@ async function buildCalendarMonth(userId, year, month) {
   return { year: Number(year), month: Number(month), weeks };
 }
 
+/**
+ * Best streak (in weeks) counted only from the trophy launch date.
+ * Drives which medals are unlocked. Returns 0 before the launch date.
+ */
+async function getTrophyStreakWeeks(userId) {
+  const s = await computeStreak(userId, TROPHIES_START);
+  return s.longestStreak || 0;
+}
+
 module.exports = {
   computeStreak,
   updateUserStreak,
   buildCalendarMonth,
+  getMonthlyAttendance,
+  getTrophyStreakWeeks,
 };
