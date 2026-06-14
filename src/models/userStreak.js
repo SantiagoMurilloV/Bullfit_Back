@@ -26,6 +26,9 @@ const userStreakSchema = new mongoose.Schema(
     },
     currentStreak: { type: Number, default: 0 },
     longestStreak: { type: Number, default: 0 },
+    // Best streak counted ONLY from the trophy launch date (lib/trophies
+    // TROPHIES_START). Drives medal unlocks; separate from the all-time streak.
+    trophyLongestStreak: { type: Number, default: 0 },
     totalActivities: { type: Number, default: 0 }, // sessions in current streak
     streakStartDate: { type: String, default: null }, // YYYY-MM-DD
     lastAttendedDate: { type: String, default: null }, // YYYY-MM-DD

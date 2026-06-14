@@ -11,7 +11,7 @@
 const moment = require('moment-timezone');
 const UserStreak = require('../models/userStreak');
 const UserNotification = require('../models/userNotification');
-const { computeStreak, buildCalendarMonth } = require('../services/gamificationService');
+const { computeStreak, buildCalendarMonth, getMonthlyAttendance, getTrophyStreakWeeks } = require('../services/gamificationService');
 
 const TZ = 'America/Bogota';
 
@@ -60,6 +60,33 @@ exports.getUserStreak = async (req, res) => {
   } catch (err) {
     console.error('[gamification] getUserStreak error:', err);
     return res.status(500).json({ message: 'Error al obtener racha' });
+  }
+};
+
+/**
+ * GET /api/gamification/:userId/progress?months=3
+ *
+ * One call powering the profile "Progreso" + "Trofeos" tabs:
+ *   - streak:  best/current streak (longestStreak drives trophy unlocks)
+ *   - monthly: attended sessions per month for the constancy chart
+ */
+exports.getUserProgress = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const months = Number(req.query.months) || 3;
+
+    let streak = await UserStreak.findOne({ userId }).lean();
+    if (!streak) {
+      streak = await computeStreak(userId);
+    }
+    const monthly = await getMonthlyAttendance(userId, months);
+    // Streak that counts only from the trophy launch date — drives medals.
+    const trophyWeeks = await getTrophyStreakWeeks(userId);
+
+    return res.json({ streak, monthly, trophyWeeks });
+  } catch (err) {
+    console.error('[gamification] getUserProgress error:', err);
+    return res.status(500).json({ message: 'Error al obtener el progreso' });
   }
 };
 

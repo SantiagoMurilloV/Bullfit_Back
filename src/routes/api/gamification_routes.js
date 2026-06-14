@@ -18,6 +18,9 @@ router.get('/gamification/:userId', requireAuth, ctrl.getUserGamification);
 // GET /api/gamification/:userId/streak  (lightweight, for customer list cards)
 router.get('/gamification/:userId/streak', requireAuth, ctrl.getUserStreak);
 
+// GET /api/gamification/:userId/progress?months=3  (constancy chart + trophies)
+router.get('/gamification/:userId/progress', requireAuth, ctrl.getUserProgress);
+
 // ── Notification bell ────────────────────────────────────────────────────────
 // Order matters: put /read-all and /all before /:id to avoid route shadowing.
 
