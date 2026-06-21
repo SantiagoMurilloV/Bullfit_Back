@@ -45,6 +45,49 @@ function weekKey(dateStr) {
 // ─── Core Streak Calculator ──────────────────────────────────────────────────
 
 /**
+ * Pure streak calculation from an already-loaded array of day strings.
+ * No DB calls — used by the bulk endpoint to avoid N queries.
+ */
+function computeStreakFromDays(attendedDays) {
+  const todayKey = weekKey(moment.tz(TZ).format('YYYY-MM-DD'));
+  const weekMap = {};
+  for (const day of attendedDays) {
+    if (!isBusinessDay(day)) continue;
+    const k = weekKey(day);
+    if (!weekMap[k]) weekMap[k] = new Set();
+    weekMap[k].add(day);
+  }
+  const sortedWeeks = Object.keys(weekMap).sort();
+  if (!sortedWeeks.length) return 0;
+
+  const MIN_DAYS = 3;
+  function weeksBetween(keyA, keyB) {
+    let cur = moment.tz(keyA, 'GGGG-[W]WW', TZ).add(1, 'week');
+    const end = moment.tz(keyB, 'GGGG-[W]WW', TZ);
+    const gaps = [];
+    while (cur.isBefore(end)) { gaps.push(cur.format('GGGG-[W]WW')); cur.add(1, 'week'); }
+    return gaps;
+  }
+
+  let cur = 0; let curStart = null; let prev = null;
+  for (const k of sortedWeeks) {
+    const days = weekMap[k].size;
+    const complete = days >= MIN_DAYS;
+    const isCurrent = k >= todayKey;
+    const gap = prev ? weeksBetween(prev, k).length > 0 : false;
+    if (gap || (!complete && !isCurrent)) {
+      cur = complete ? 1 : 0;
+      curStart = complete ? k : null;
+    } else if (complete) {
+      cur++;
+      if (!curStart) curStart = k;
+    }
+    prev = k;
+  }
+  return cur;
+}
+
+/**
  * Compute streak data for a user from their attendance history.
  *
  * @param {string} userId  - Mongoose ObjectId string
@@ -418,6 +461,7 @@ async function getTrophyStreakWeeks(userId) {
 
 module.exports = {
   computeStreak,
+  computeStreakFromDays,
   updateUserStreak,
   buildCalendarMonth,
   getMonthlyAttendance,

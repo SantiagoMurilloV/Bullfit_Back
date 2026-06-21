@@ -31,6 +31,8 @@ const userNotificationSchema = new mongoose.Schema(
     read: { type: Boolean, default: false },
     url: { type: String, default: '/' },
     pushSent: { type: Boolean, default: false },
+    // For achievement notifications: the trophy key awarded (e.g. 'burpees').
+    trophyKey: { type: String, default: null },
     // Deduplication key — prevents sending the same inactivity alert twice
     // on the same calendar day. Format: '<type>-<userId>-<YYYY-MM-DD>'.
     dedupeKey: { type: String, index: true, sparse: true },

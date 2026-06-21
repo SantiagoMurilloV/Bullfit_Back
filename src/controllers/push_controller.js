@@ -82,10 +82,6 @@ exports.unsubscribe = async (req, res) => {
  * Auth: requireAdmin (applied at the router level).
  */
 exports.sendBroadcast = async (req, res) => {
-  if (!isConfigured()) {
-    return res.status(503).json({ message: 'VAPID no configurado en el servidor' });
-  }
-
   const title = (req.body && typeof req.body.title === 'string') ? req.body.title.trim() : '';
   const body = (req.body && typeof req.body.body === 'string') ? req.body.body.trim() : '';
   const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '/';
@@ -139,17 +135,30 @@ exports.sendBroadcast = async (req, res) => {
     return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox: 0, audience, eligibleUsers: 0 });
   }
 
+  // Accept optional type and trophyKey for achievement notifications.
+  const notifType = (req.body && req.body.type === 'achievement') ? 'achievement' : 'system';
+  const trophyKey = (notifType === 'achievement' && req.body && typeof req.body.trophyKey === 'string')
+    ? req.body.trophyKey.trim() : null;
+
   // Persist to each target user's in-app inbox (the bell history). This is
   // independent of web push: the user sees the message in their bell even if
   // they never granted browser push permission. Without this the bell history
   // stayed empty for admin-sent notifications.
   let inbox = 0;
   try {
-    const docs = targetUserIds.map((id) => ({ userId: id, title, body, type: 'system', url }));
+    const docs = targetUserIds.map((id) => ({
+      userId: id, title, body, type: notifType, url,
+      ...(trophyKey ? { trophyKey } : {}),
+    }));
     const inserted = await UserNotification.insertMany(docs, { ordered: false });
     inbox = inserted.length;
   } catch (err) {
     console.error('[push/send] error guardando bandejas:', err);
+  }
+
+  // Web push is optional — if VAPID isn't configured we still saved to inbox.
+  if (!isConfigured()) {
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox, audience, eligibleUsers: targetUserIds.length });
   }
 
   let subs;
@@ -311,6 +320,48 @@ exports.createTemplate = async (req, res) => {
     }
     console.error('[push/templates create] error:', err);
     return res.status(500).json({ message: 'Error guardando la plantilla' });
+  }
+};
+
+/**
+ * GET /api/notifications/user/:userId
+ * Returns all notifications for a specific user (admin only).
+ */
+exports.listUserNotifications = async (req, res) => {
+  const { userId } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ message: 'userId inválido' });
+  }
+  try {
+    const notifications = await UserNotification.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
+    return res.json({ notifications });
+  } catch (err) {
+    console.error('[push/user-notifications] error:', err);
+    return res.status(500).json({ message: 'Error cargando notificaciones' });
+  }
+};
+
+/**
+ * DELETE /api/notifications/inbox/:id
+ * Deletes any notification by id (admin only).
+ */
+exports.deleteNotification = async (req, res) => {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: 'id inválido' });
+  }
+  try {
+    const deleted = await UserNotification.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Notificación no encontrada' });
+    }
+    return res.status(204).end();
+  } catch (err) {
+    console.error('[push/delete-notification] error:', err);
+    return res.status(500).json({ message: 'Error eliminando notificación' });
   }
 };
 
