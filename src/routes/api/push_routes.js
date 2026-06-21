@@ -26,5 +26,7 @@ router.get('/notifications/templates', requireAdmin, pushController.listTemplate
 router.post('/notifications/templates', requireAdmin, pushController.createTemplate);
 router.delete('/notifications/templates/:id', requireAdmin, pushController.deleteTemplate);
 router.get('/notifications/recipients', requireAdmin, pushController.listRecipients);
+router.get('/notifications/user/:userId', requireAdmin, pushController.listUserNotifications);
+router.delete('/notifications/inbox/:id', requireAdmin, pushController.deleteNotification);
 
 module.exports = router;
