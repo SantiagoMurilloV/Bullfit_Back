@@ -11,7 +11,8 @@
 const moment = require('moment-timezone');
 const UserStreak = require('../models/userStreak');
 const UserNotification = require('../models/userNotification');
-const { computeStreak, buildCalendarMonth, getMonthlyAttendance, getTrophyStreakWeeks } = require('../services/gamificationService');
+const { computeStreak, computeStreakFromDays, buildCalendarMonth, getMonthlyAttendance, getTrophyStreakWeeks } = require('../services/gamificationService');
+const Reservation = require('../models/reservations');
 
 const TZ = 'America/Bogota';
 
@@ -60,6 +61,43 @@ exports.getUserStreak = async (req, res) => {
   } catch (err) {
     console.error('[gamification] getUserStreak error:', err);
     return res.status(500).json({ message: 'Error al obtener racha' });
+  }
+};
+
+/**
+ * GET /api/gamification/streaks/all
+ * Admin-only. One DB query per collection (users + reservations) — no per-user loops.
+ * Groups all attended days by userId in memory, then runs pure streak calc for each.
+ */
+exports.getAllStreaks = async (req, res) => {
+  try {
+    const User = require('../models/users');
+
+    // Single query for all active users + all their attended reservations.
+    const [activeUsers, allAttended] = await Promise.all([
+      User.find({ Active: 'Sí' }).select('_id').lean(),
+      Reservation.find({ Attendance: 'Si' }, { userId: 1, day: 1, _id: 0 }).lean(),
+    ]);
+
+    // Group days by userId string.
+    const daysByUser = {};
+    for (const r of allAttended) {
+      const uid = String(r.userId);
+      if (!daysByUser[uid]) daysByUser[uid] = [];
+      daysByUser[uid].push(r.day);
+    }
+
+    // Compute streak for every active user in memory — no extra DB calls.
+    const streaks = {};
+    for (const u of activeUsers) {
+      const uid = String(u._id);
+      streaks[uid] = computeStreakFromDays(daysByUser[uid] || []);
+    }
+
+    return res.json({ streaks });
+  } catch (err) {
+    console.error('[gamification] getAllStreaks error:', err);
+    return res.status(500).json({ message: 'Error al obtener rachas' });
   }
 };
 

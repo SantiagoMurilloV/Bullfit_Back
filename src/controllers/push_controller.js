@@ -82,10 +82,6 @@ exports.unsubscribe = async (req, res) => {
  * Auth: requireAdmin (applied at the router level).
  */
 exports.sendBroadcast = async (req, res) => {
-  if (!isConfigured()) {
-    return res.status(503).json({ message: 'VAPID no configurado en el servidor' });
-  }
-
   const title = (req.body && typeof req.body.title === 'string') ? req.body.title.trim() : '';
   const body = (req.body && typeof req.body.body === 'string') ? req.body.body.trim() : '';
   const url = (req.body && typeof req.body.url === 'string') ? req.body.url.trim() : '/';
@@ -158,6 +154,11 @@ exports.sendBroadcast = async (req, res) => {
     inbox = inserted.length;
   } catch (err) {
     console.error('[push/send] error guardando bandejas:', err);
+  }
+
+  // Web push is optional — if VAPID isn't configured we still saved to inbox.
+  if (!isConfigured()) {
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox, audience, eligibleUsers: targetUserIds.length });
   }
 
   let subs;
