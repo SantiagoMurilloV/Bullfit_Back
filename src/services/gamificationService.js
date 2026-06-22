@@ -28,34 +28,16 @@ const MONTH_LABELS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago',
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Given a Set/array of attended day strings within one week, returns true if
- * there are at least 3 business days attended AND at least 3 of them are
- * consecutive (no gap between them in the business-day sequence Mon-Fri).
+ * Returns true if the week has at least 3 business-day attendances,
+ * regardless of whether they are consecutive.
  *
  * Examples:
- *   Mon, Tue, Thu  → 3 days but not consecutive → false
- *   Mon, Tue, Wed  → 3 consecutive              → true
- *   Tue, Wed, Thu  → 3 consecutive              → true
- *   Mon, Wed, Thu, Fri → Thu-Fri only 2 consec, but Wed-Thu-Fri = 3 → true
+ *   Mon, Tue, Thu  → true  (3 days, no need to be consecutive)
+ *   Mon, Wed, Fri  → true
+ *   Mon, Tue       → false (only 2)
  */
 function hasThreeConsecutive(attendedSet) {
-  const days = Array.from(attendedSet).sort();
-  if (days.length < 3) return false;
-  // Build the ordered list of business days in Mon-Fri for this week.
-  // We derive the week from the first attended day.
-  const weekMon = moment.tz(days[0], TZ).startOf('isoWeek');
-  const bizSeq = [];
-  for (let i = 0; i < 5; i++) {
-    const d = weekMon.clone().add(i, 'days').format('YYYY-MM-DD');
-    if (isBusinessDay(d)) bizSeq.push(d);
-  }
-  // Slide a window of 3 consecutive business days and check if all are attended.
-  for (let i = 0; i <= bizSeq.length - 3; i++) {
-    if (attendedSet.has(bizSeq[i]) && attendedSet.has(bizSeq[i + 1]) && attendedSet.has(bizSeq[i + 2])) {
-      return true;
-    }
-  }
-  return false;
+  return attendedSet.size >= 3;
 }
 
 /** Monday of the ISO week that contains `dateStr`. */
@@ -129,7 +111,7 @@ async function computeStreak(userId, sinceDay = null) {
   // (YYYY-MM-DD), only count attendance on/after it — used for the trophy
   // streak, which starts counting from the launch date.
   const today = moment.tz(TZ).format('YYYY-MM-DD');
-  const query = { userId, Attendance: 'Si', day: { $lte: today } };
+  const query = { userId, Attendance: { $ne: 'No' }, day: { $lte: today } };
   if (sinceDay) query.day.$gte = sinceDay;
   const attended = await Reservation.find(
     query,
@@ -363,12 +345,15 @@ async function buildCalendarMonth(userId, year, month) {
   ).lean();
 
   // Build lookup: day → { attended, trainingType }
+  // A day counts as attended unless Attendance is explicitly 'No'.
   const dayMap = {};
   for (const r of reservations) {
-    // If multiple reservations same day, prefer 'Si'
-    if (!dayMap[r.day] || r.Attendance === 'Si') {
+    const isNo = r.Attendance === 'No';
+    const isAttended = !isNo;
+    // If multiple reservations same day, prefer an attended one
+    if (!dayMap[r.day] || isAttended) {
       dayMap[r.day] = {
-        attended: r.Attendance === 'Si',
+        attended: isAttended,
         hasReservation: true,
         trainingType: r.TrainingType || null,
       };
