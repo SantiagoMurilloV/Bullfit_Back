@@ -49,9 +49,11 @@ function weekKey(dateStr) {
  * No DB calls — used by the bulk endpoint to avoid N queries.
  */
 function computeStreakFromDays(attendedDays) {
-  const todayKey = weekKey(moment.tz(TZ).format('YYYY-MM-DD'));
+  const today = moment.tz(TZ).format('YYYY-MM-DD');
+  const todayKey = weekKey(today);
   const weekMap = {};
   for (const day of attendedDays) {
+    if (day > today) continue; // ignorar reservas futuras
     if (!isBusinessDay(day)) continue;
     const k = weekKey(day);
     if (!weekMap[k]) weekMap[k] = new Set();
@@ -98,8 +100,9 @@ async function computeStreak(userId, sinceDay = null) {
   // Fetch attended reservations, oldest first. When `sinceDay` is given
   // (YYYY-MM-DD), only count attendance on/after it — used for the trophy
   // streak, which starts counting from the launch date.
-  const query = { userId, Attendance: 'Si' };
-  if (sinceDay) query.day = { $gte: sinceDay };
+  const today = moment.tz(TZ).format('YYYY-MM-DD');
+  const query = { userId, Attendance: 'Si', day: { $lte: today } };
+  if (sinceDay) query.day.$gte = sinceDay;
   const attended = await Reservation.find(
     query,
     { day: 1, _id: 0 },
