@@ -27,6 +27,37 @@ const MONTH_LABELS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago',
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Given a Set/array of attended day strings within one week, returns true if
+ * there are at least 3 business days attended AND at least 3 of them are
+ * consecutive (no gap between them in the business-day sequence Mon-Fri).
+ *
+ * Examples:
+ *   Mon, Tue, Thu  → 3 days but not consecutive → false
+ *   Mon, Tue, Wed  → 3 consecutive              → true
+ *   Tue, Wed, Thu  → 3 consecutive              → true
+ *   Mon, Wed, Thu, Fri → Thu-Fri only 2 consec, but Wed-Thu-Fri = 3 → true
+ */
+function hasThreeConsecutive(attendedSet) {
+  const days = Array.from(attendedSet).sort();
+  if (days.length < 3) return false;
+  // Build the ordered list of business days in Mon-Fri for this week.
+  // We derive the week from the first attended day.
+  const weekMon = moment.tz(days[0], TZ).startOf('isoWeek');
+  const bizSeq = [];
+  for (let i = 0; i < 5; i++) {
+    const d = weekMon.clone().add(i, 'days').format('YYYY-MM-DD');
+    if (isBusinessDay(d)) bizSeq.push(d);
+  }
+  // Slide a window of 3 consecutive business days and check if all are attended.
+  for (let i = 0; i <= bizSeq.length - 3; i++) {
+    if (attendedSet.has(bizSeq[i]) && attendedSet.has(bizSeq[i + 1]) && attendedSet.has(bizSeq[i + 2])) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Monday of the ISO week that contains `dateStr`. */
 function weekStart(dateStr) {
   return moment.tz(dateStr, TZ).startOf('isoWeek').format('YYYY-MM-DD');
@@ -49,42 +80,41 @@ function weekKey(dateStr) {
  * No DB calls — used by the bulk endpoint to avoid N queries.
  */
 function computeStreakFromDays(attendedDays) {
-  const todayKey = weekKey(moment.tz(TZ).format('YYYY-MM-DD'));
+  const today = moment.tz(TZ).format('YYYY-MM-DD');
+  const todayKey = weekKey(today);
   const weekMap = {};
   for (const day of attendedDays) {
+    if (day > today) continue; // ignorar reservas futuras
     if (!isBusinessDay(day)) continue;
     const k = weekKey(day);
     if (!weekMap[k]) weekMap[k] = new Set();
     weekMap[k].add(day);
   }
-  const sortedWeeks = Object.keys(weekMap).sort();
-  if (!sortedWeeks.length) return 0;
+  if (!Object.keys(weekMap).length) return 0;
 
-  const MIN_DAYS = 3;
-  function weeksBetween(keyA, keyB) {
-    let cur = moment.tz(keyA, 'GGGG-[W]WW', TZ).add(1, 'week');
-    const end = moment.tz(keyB, 'GGGG-[W]WW', TZ);
-    const gaps = [];
-    while (cur.isBefore(end)) { gaps.push(cur.format('GGGG-[W]WW')); cur.add(1, 'week'); }
-    return gaps;
+  // Walk backwards from current week. Each week must be complete (3 consecutive
+  // business days attended). The current in-progress week is skipped if incomplete
+  // — the user still has time. Any past week that is incomplete OR has no attendance
+  // breaks the streak immediately.
+  const prevWeekKey = moment.tz(TZ).startOf('isoWeek').subtract(1, 'week').format('GGGG-[W]WW');
+  let streak = 0;
+  let checkKey = prevWeekKey; // start from last fully-elapsed week
+
+  // First, optionally count current week if already complete
+  if (weekMap[todayKey] && hasThreeConsecutive(weekMap[todayKey])) {
+    streak++;
+    // then continue from prevWeek
   }
 
-  let cur = 0; let curStart = null; let prev = null;
-  for (const k of sortedWeeks) {
-    const days = weekMap[k].size;
-    const complete = days >= MIN_DAYS;
-    const isCurrent = k >= todayKey;
-    const gap = prev ? weeksBetween(prev, k).length > 0 : false;
-    if (gap || (!complete && !isCurrent)) {
-      cur = complete ? 1 : 0;
-      curStart = complete ? k : null;
-    } else if (complete) {
-      cur++;
-      if (!curStart) curStart = k;
-    }
-    prev = k;
+  // Walk backwards one week at a time
+  while (true) {
+    const set = weekMap[checkKey];
+    if (!set || !hasThreeConsecutive(set)) break; // missing or incomplete → streak over
+    streak++;
+    checkKey = moment.tz(checkKey, 'GGGG-[W]WW', TZ).subtract(1, 'week').format('GGGG-[W]WW');
   }
-  return cur;
+
+  return streak;
 }
 
 /**
@@ -98,8 +128,9 @@ async function computeStreak(userId, sinceDay = null) {
   // Fetch attended reservations, oldest first. When `sinceDay` is given
   // (YYYY-MM-DD), only count attendance on/after it — used for the trophy
   // streak, which starts counting from the launch date.
-  const query = { userId, Attendance: 'Si' };
-  if (sinceDay) query.day = { $gte: sinceDay };
+  const today = moment.tz(TZ).format('YYYY-MM-DD');
+  const query = { userId, Attendance: 'Si', day: { $lte: today } };
+  if (sinceDay) query.day.$gte = sinceDay;
   const attended = await Reservation.find(
     query,
     { day: 1, _id: 0 },
@@ -115,125 +146,82 @@ async function computeStreak(userId, sinceDay = null) {
     };
   }
 
-  // Group attended days by ISO week key, counting only distinct business days.
-  const weekMap = {}; // weekKey → Set of day strings
+  // Group attended days by ISO week, business days only.
+  const weekMap = {};
   for (const r of attended) {
-    if (!isBusinessDay(r.day)) continue; // skip if somehow on a holiday/weekend
+    if (!isBusinessDay(r.day)) continue;
     const k = weekKey(r.day);
     if (!weekMap[k]) weekMap[k] = new Set();
     weekMap[k].add(r.day);
   }
 
-  // Sort weeks chronologically.
-  const sortedWeeks = Object.keys(weekMap).sort();
-  if (!sortedWeeks.length) {
-    return {
-      currentStreak: 0,
-      longestStreak: 0,
-      totalActivities: 0,
-      streakStartDate: null,
-      lastAttendedDate: null,
-    };
+  if (!Object.keys(weekMap).length) {
+    return { currentStreak: 0, longestStreak: 0, totalActivities: 0, streakStartDate: null, lastAttendedDate: null };
   }
 
-  const MIN_DAYS = 3; // days required per week to count as "complete"
+  const todayKey  = weekKey(today);
+  const prevWeekKey = moment.tz(TZ).startOf('isoWeek').subtract(1, 'week').format('GGGG-[W]WW');
 
-  const todayKey = weekKey(moment.tz(TZ).format('YYYY-MM-DD'));
+  // ── Current streak: walk backwards week by week from today ───────────────
+  // Current week counts only if already complete (3 consecutive).
+  // Previous weeks must each be complete with no gap — one missing week → 0.
+  let currentStreak = 0;
+  let currentStreakStart = null;
 
-  // Build list of { key, complete, start, days } for each week that has attendance.
-  const weekList = sortedWeeks.map((k) => ({
-    key: k,
-    days: weekMap[k].size,
-    complete: weekMap[k].size >= MIN_DAYS,
-    start: moment.tz(k, 'GGGG-[W]WW', TZ).startOf('isoWeek').format('YYYY-MM-DD'),
-  }));
+  let checkKey = todayKey;
+  // Skip current week if incomplete (user still has time); still start there.
+  if (weekMap[checkKey] && hasThreeConsecutive(weekMap[checkKey])) {
+    currentStreak++;
+    currentStreakStart = moment.tz(checkKey, 'GGGG-[W]WW', TZ).startOf('isoWeek').format('YYYY-MM-DD');
+  }
+  // Walk backwards through previous weeks
+  checkKey = prevWeekKey;
+  while (true) {
+    const set = weekMap[checkKey];
+    if (!set || !hasThreeConsecutive(set)) break;
+    currentStreak++;
+    currentStreakStart = moment.tz(checkKey, 'GGGG-[W]WW', TZ).startOf('isoWeek').format('YYYY-MM-DD');
+    checkKey = moment.tz(checkKey, 'GGGG-[W]WW', TZ).subtract(1, 'week').format('GGGG-[W]WW');
+  }
 
-  // Walk the sorted week list and find consecutive complete-week runs.
-  // We consider two weeks "consecutive" if no complete intermediate week
-  // was skipped. If a week was entirely skipped (no attendance at all) and
-  // was in the past, the streak resets — UNLESS we decide to be lenient.
-  // For Bullfit we use STRICT consecutive: any gap week (past, fully elapsed,
-  // no attendance or < 3 days) resets the counter.
-
+  // ── Longest streak: forward pass through all weeks with attendance ────────
+  // Weeks with no attendance between two attended weeks count as a break.
+  const sortedWeeks = Object.keys(weekMap).sort();
   let best = 0;
-  let bestStart = null;
   let run = 0;
   let runStart = null;
   let prevKey = null;
 
-  // Helper: week keys between two keys (exclusive, to detect gaps).
-  function weeksBetween(keyA, keyB) {
-    let cur = moment.tz(keyA, 'GGGG-[W]WW', TZ).add(1, 'week');
-    const end = moment.tz(keyB, 'GGGG-[W]WW', TZ);
-    const gaps = [];
-    while (cur.isBefore(end)) {
-      gaps.push(cur.format('GGGG-[W]WW'));
-      cur.add(1, 'week');
-    }
-    return gaps;
-  }
+  for (const k of sortedWeeks) {
+    const complete = hasThreeConsecutive(weekMap[k]);
+    // Gap = skipped week(s) between prevKey and k
+    const gap = prevKey
+      ? moment.tz(k, 'GGGG-[W]WW', TZ).diff(moment.tz(prevKey, 'GGGG-[W]WW', TZ), 'weeks') > 1
+      : false;
 
-  for (const w of weekList) {
-    const isCurrentOrFuture = w.key >= todayKey;
-    const gapWeeks = prevKey ? weeksBetween(prevKey, w.key) : [];
-    const hasGap = gapWeeks.length > 0;
-
-    if (hasGap || (!w.complete && !isCurrentOrFuture)) {
-      // Streak resets.
-      if (run > best) { best = run; bestStart = runStart; }
-      run = w.complete ? 1 : 0;
-      runStart = w.complete ? w.start : null;
-    } else if (w.complete) {
+    if (gap || !complete) {
+      if (run > best) { best = run; }
+      run = complete ? 1 : 0;
+      runStart = complete ? moment.tz(k, 'GGGG-[W]WW', TZ).startOf('isoWeek').format('YYYY-MM-DD') : null;
+    } else {
       run++;
-      if (!runStart) runStart = w.start;
+      if (!runStart) runStart = moment.tz(k, 'GGGG-[W]WW', TZ).startOf('isoWeek').format('YYYY-MM-DD');
     }
-    // Incomplete current week: don't reset — user still has days to attend.
-    prevKey = w.key;
+    prevKey = k;
   }
-  if (run > best) { best = run; bestStart = runStart; }
+  if (run > best) best = run;
 
-  // Current streak = last run value (if the last week was complete or is current).
-  const lastWeek = weekList[weekList.length - 1];
-  let currentStreak = 0;
-  let currentStreakStart = null;
+  const longestStreak = Math.max(best, currentStreak);
 
-  if (lastWeek.complete || lastWeek.key >= todayKey) {
-    // Re-walk to get the final consecutive run from the end.
-    let cur2 = 0;
-    let cur2Start = null;
-    let prev2 = null;
-    for (const w of weekList) {
-      const isCurrentOrFuture2 = w.key >= todayKey;
-      const gap2 = prev2 ? weeksBetween(prev2, w.key).length > 0 : false;
-      if (gap2 || (!w.complete && !isCurrentOrFuture2)) {
-        cur2 = w.complete ? 1 : 0;
-        cur2Start = w.complete ? w.start : null;
-      } else if (w.complete) {
-        cur2++;
-        if (!cur2Start) cur2Start = w.start;
-      }
-      prev2 = w.key;
-    }
-    currentStreak = cur2;
-    currentStreakStart = cur2Start;
-  }
-
-  // Total activities in the current streak period.
+  // Total activities since start of current streak
   let totalActivities = 0;
   if (currentStreakStart) {
     totalActivities = attended.filter((r) => r.day >= currentStreakStart).length;
   }
 
-  const longestStreak = Math.max(best, currentStreak);
   const lastAttendedDate = attended[attended.length - 1].day;
 
-  return {
-    currentStreak,
-    longestStreak,
-    totalActivities,
-    streakStartDate: currentStreakStart,
-    lastAttendedDate,
-  };
+  return { currentStreak, longestStreak, totalActivities, streakStartDate: currentStreakStart, lastAttendedDate };
 }
 
 // ─── Streak Updater ──────────────────────────────────────────────────────────
@@ -439,11 +427,12 @@ async function buildCalendarMonth(userId, year, month) {
     const weekDays = allDays.slice(i, i + 7);
     const bizDays = weekDays.filter((d) => d.isBusinessDay && d.isInMonth !== false);
     const daysAttended = bizDays.filter((d) => d.attended).length;
+    const attendedSet = new Set(bizDays.filter((d) => d.attended).map((d) => d.date));
     weeks.push({
       weekKey: weekKey(weekDays[0].date),
       days: weekDays,
       daysAttended,
-      complete: daysAttended >= 3,
+      complete: hasThreeConsecutive(attendedSet),
     });
   }
 
