@@ -76,7 +76,7 @@ exports.getAllStreaks = async (req, res) => {
     // Single query for all active users + all their attended reservations.
     const [activeUsers, allAttended] = await Promise.all([
       User.find({ Active: 'Sí' }).select('_id').lean(),
-      Reservation.find({ Attendance: 'Si' }, { userId: 1, day: 1, _id: 0 }).lean(),
+      Reservation.find({ Attendance: { $ne: 'No' } }, { userId: 1, day: 1, _id: 0 }).lean(),
     ]);
 
     // Group days by userId string.
