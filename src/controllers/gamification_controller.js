@@ -31,13 +31,11 @@ exports.getUserGamification = async (req, res) => {
     const year = Number(req.query.year) || now.year();
     const month = Number(req.query.month) || now.month() + 1; // 1-based
 
-    // Try cached streak first; fall back to live computation.
-    let streak = await UserStreak.findOne({ userId }).lean();
-    if (!streak) {
-      streak = await computeStreak(userId);
-    }
-
-    const calendar = await buildCalendarMonth(userId, year, month);
+    // Always recompute live so the calendar reflects the latest attendance.
+    const [streak, calendar] = await Promise.all([
+      computeStreak(userId),
+      buildCalendarMonth(userId, year, month),
+    ]);
 
     return res.json({ streak, calendar });
   } catch (err) {
