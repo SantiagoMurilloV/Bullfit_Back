@@ -787,6 +787,93 @@ exports.getUserReservations = async (req, res) => {
   }
 };
 
+// Historial COMPLETO de reservas de un usuario, SIN filtro de fecha.
+// getUserReservations solo devuelve desde getMinimumReservationDate() (semana
+// pasada en adelante), por lo que sirve para la grilla de reservas pero NO para
+// totales/asistencia/faltas/última reserva reales. Este endpoint trae todo el
+// historial (equivalente a find({ userId }) en la colección reservations).
+exports.getUserReservationHistory = async (req, res) => {
+  const profiler = startProfiler('getUserReservationHistory');
+  const userId = req.params.userId;
+
+  try {
+    const reservations = await Reservation.find({ userId })
+      .select('day dayOfWeek hour TrainingType Status Attendance isAdmin userId')
+      .sort({ day: -1, hour: -1 })
+      .lean();
+
+    res.status(200).json(reservations);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener el historial de reservas del usuario' });
+  } finally {
+    endProfiler(profiler);
+  }
+};
+
+// Agregado de FALTAS por usuario (asistencia 'No'), calculado server-side sobre
+// TODA la colección (no la caché de ~2 semanas). Opcionalmente filtra por mes
+// (?month=YYYY-MM) y por mínimo de faltas (?minFaltas=N). Ordena de más a menos faltas.
+exports.getAbsencesByUser = async (req, res) => {
+  const profiler = startProfiler('getAbsencesByUser');
+  try {
+    const month = typeof req.query.month === 'string' && /^\d{4}-\d{2}$/.test(req.query.month)
+      ? req.query.month
+      : null;
+    const minFaltas = Number(req.query.minFaltas) > 0 ? Number(req.query.minFaltas) : 1;
+
+    const pipeline = [];
+    if (month) {
+      // day se guarda como string 'YYYY-MM-DD'; el rango lexicográfico cubre el mes completo.
+      pipeline.push({ $match: { day: { $gte: `${month}-01`, $lte: `${month}-31` } } });
+    }
+    pipeline.push(
+      {
+        $group: {
+          _id: '$userId',
+          total: { $sum: 1 },
+          faltas: { $sum: { $cond: [{ $eq: ['$Attendance', 'No'] }, 1, 0] } },
+        },
+      },
+      { $match: { faltas: { $gte: minFaltas } } },
+      { $sort: { faltas: -1 } },
+      {
+        $lookup: {
+          from: 'users',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          faltas: 1,
+          total: 1,
+          FirstName: '$user.FirstName',
+          LastName: '$user.LastName',
+          Active: '$user.Active',
+        },
+      }
+    );
+
+    const grouped = await Reservation.aggregate(pipeline);
+
+    res.status(200).json({
+      month: month || 'all',
+      minFaltas,
+      total: grouped.length,
+      users: grouped,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al obtener las faltas por usuario' });
+  } finally {
+    endProfiler(profiler);
+  }
+};
+
 exports.deleteReservation = async (req, res) => {
   const profiler = startProfiler('deleteReservation');
   const reservationId = req.params.reservationId;

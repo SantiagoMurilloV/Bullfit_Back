@@ -10,6 +10,8 @@ router.get('/reservations', reservationsControllers.getAllReservations);
 router.get('/reservations/week', reservationsControllers.getReservationsByWeek);
 router.get('/reservations/:userId', reservationsControllers.getUserReservations);
 router.get('/reservationsid/:userId', reservationsControllers.getAllReservationsId);
+router.get('/reservationsHistory/:userId', reservationsControllers.getUserReservationHistory);
+router.get('/reservationsAbsences', reservationsControllers.getAbsencesByUser);
 router.post('/reservations', reservationsControllers.createReservation);
 router.put('/reservations/:reservationId', reservationsControllers.updateUserTrainingType);
 router.delete('/reservations/:reservationId', reservationsControllers.deleteReservation);
