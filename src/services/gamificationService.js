@@ -66,7 +66,8 @@ function computeStreakFromDays(attendedDays) {
   const todayKey = weekKey(today);
   const weekMap = {};
   for (const day of attendedDays) {
-    if (day > today) continue; // ignorar reservas futuras
+    if (day > today) continue;            // ignorar reservas futuras (las medallas/racha nunca cuentan el futuro)
+    if (day < TROPHIES_START) continue;   // el juego de rachas arranca en la fecha de lanzamiento: todos parten de cero
     if (!isBusinessDay(day)) continue;
     const k = weekKey(day);
     if (!weekMap[k]) weekMap[k] = new Set();
@@ -107,12 +108,14 @@ function computeStreakFromDays(attendedDays) {
  *                     streakStartDate, lastAttendedDate }
  */
 async function computeStreak(userId, sinceDay = null) {
-  // Fetch attended reservations, oldest first. When `sinceDay` is given
-  // (YYYY-MM-DD), only count attendance on/after it — used for the trophy
-  // streak, which starts counting from the launch date.
+  // Fetch attended reservations, oldest first.
+  //  - `day <= today` => las medallas/racha NUNCA cuentan reservas futuras.
+  //  - `day >= floor` => toda la racha arranca en la fecha de lanzamiento del
+  //    juego (TROPHIES_START): todos parten de cero el 1 de julio. `sinceDay`,
+  //    si se pasa, solo puede mover el piso hacia adelante, nunca antes.
   const today = moment.tz(TZ).format('YYYY-MM-DD');
-  const query = { userId, Attendance: { $ne: 'No' }, day: { $lte: today } };
-  if (sinceDay) query.day.$gte = sinceDay;
+  const floorDay = sinceDay && sinceDay > TROPHIES_START ? sinceDay : TROPHIES_START;
+  const query = { userId, Attendance: { $ne: 'No' }, day: { $gte: floorDay, $lte: today } };
   const attended = await Reservation.find(
     query,
     { day: 1, _id: 0 },
@@ -221,11 +224,11 @@ async function updateUserStreak(userId) {
   ).lean();
   const prevTrophy = existing ? (existing.trophyLongestStreak || 0) : 0;
 
-  // All-time streak (drives the calendar / "mejor racha").
+  // Streak shown in the calendar / "mejor racha". Since computeStreak now floors
+  // every streak at the launch date (TROPHIES_START), the displayed streak and
+  // the trophy streak coincide — no need to compute it twice.
   const data = await computeStreak(userId);
-  // Trophy streak: only counts from the launch date.
-  const trophyData = await computeStreak(userId, TROPHIES_START);
-  const trophyLongest = trophyData.longestStreak || 0;
+  const trophyLongest = data.longestStreak || 0;
 
   const streakDoc = await UserStreak.findOneAndUpdate(
     { userId },
@@ -260,7 +263,7 @@ async function updateUserStreak(userId) {
       // → the user who unlocked it
       notifyUser(userId, {
         title: '¡Nuevo trofeo! 🏆',
-        body: `Desbloqueaste "${t.name}" (${t.label} de racha). ${t.description}`,
+        body: `Desbloqueaste el trofeo "${t.name}". ${t.description}`,
         url: '/#trofeos',
         type: 'achievement',
         dedupeKey: `trophy-${userId}-${t.key}`,
@@ -270,7 +273,7 @@ async function updateUserStreak(userId) {
       for (const a of admins) {
         notifyUser(a._id, {
           title: 'Medalla desbloqueada 🏆',
-          body: `${userName || 'Un usuario'} desbloqueó "${t.name}" (${t.label} de racha).`,
+          body: `${userName || 'Un usuario'} desbloqueó el trofeo "${t.name}".`,
           url: '/',
           type: 'achievement',
           dedupeKey: `trophy-admin-${a._id}-${userId}-${t.key}`,

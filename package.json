@@ -7,7 +7,8 @@
     "test": "jest",
     "dev": "npx nodemon app",
     "start": "node app",
-    "update-db": "node update.js"
+    "update-db": "node update.js",
+    "reset-streaks": "node src/scripts/resetStreaks.js"
   },
   "author": "santiago murillo",
   "license": "ISC",

@@ -13,17 +13,17 @@ const TROPHIES_START = '2026-07-01';
 
 const TROPHIES = [
   { key: 'iniciado', name: 'Iniciado', label: '1 mes', weeks: 4,
-    description: 'Completaste tu primer mes de constancia. ¡El comienzo de algo grande!' },
+    description: 'Arrancaste con todo y no fallaste. ¡El comienzo de algo grande!' },
   { key: 'constancia', name: 'Constancia', label: '2 meses', weeks: 9,
-    description: 'Dos meses entrenando sin fallar. Ya no es esfuerzo: es hábito.' },
+    description: 'Entrenar sin fallar ya no es esfuerzo: es hábito.' },
   { key: 'persistencia', name: 'Persistencia', label: '4 meses', weeks: 17,
-    description: 'Cuatro meses sin rendirte. La persistencia ya te define.' },
+    description: 'No te rendiste. Ya es parte de quién eres.' },
   { key: 'seis_meses', name: '6 Meses', label: '6 meses', weeks: 26,
-    description: 'Medio año de disciplina pura. Eres imparable.' },
+    description: 'Disciplina pura, sin excusas. Eres imparable.' },
   { key: 'nueve_meses', name: '9 Meses', label: '9 meses', weeks: 39,
-    description: 'Nueve meses de entrega total. Casi una leyenda Bullfit.' },
+    description: 'Entrega total, sin pausa. Casi una leyenda Bullfit.' },
   { key: 'un_ano', name: '1 Año', label: '1 año', weeks: 52,
-    description: '¡Un año completo de racha! Bienvenido a la élite Bullfit.' },
+    description: '¡Lo lograste! Bienvenido a la élite Bullfit.' },
 ];
 
 /**
