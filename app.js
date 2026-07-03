@@ -24,6 +24,7 @@ const gamificationRoutes = require('./src/routes/api/gamification_routes');
 const leadsRoutes = require('./src/routes/api/leads_routes');
 const eventsRoutes = require('./src/routes/api/events_routes');
 const aiRoutes = require('./src/routes/api/ai_routes');
+const trophiesRoutes = require('./src/routes/api/trophies_routes');
 const { startInactivityJob } = require('./src/jobs/inactivityJob');
 const { startMembershipExpiryJob } = require('./src/jobs/membershipExpiryJob');
 
@@ -187,6 +188,7 @@ app.use('/api', pqrs);
 app.use('/api', invitadosRoutes);
 app.use('/api', gamificationRoutes);
 app.use('/api', aiRoutes);
+app.use('/api', trophiesRoutes);
 
 // ---- 404 handler -----------------------------------------------------------
 // Anything that wasn't caught by the routers above. Keep before the error
