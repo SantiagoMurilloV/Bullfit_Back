@@ -9,11 +9,15 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../../controllers/gamification_controller');
-const { requireAuth } = require('../../middleware/auth');
+const { requireAuth, requireAdmin } = require('../../middleware/auth');
 
 // ── Streak + calendar ────────────────────────────────────────────────────────
 // GET /api/gamification/streaks/all  — debe ir ANTES de /:userId para evitar shadowing
 router.get('/gamification/streaks/all', requireAuth, ctrl.getAllStreaks);
+
+// GET /api/gamification/leaderboard  — ranking del juego de rachas (Bull Admin).
+// También ANTES de /:userId para evitar shadowing.
+router.get('/gamification/leaderboard', requireAdmin, ctrl.getStreakLeaderboard);
 
 // GET /api/gamification/:userId?year=2026&month=6
 router.get('/gamification/:userId', requireAuth, ctrl.getUserGamification);

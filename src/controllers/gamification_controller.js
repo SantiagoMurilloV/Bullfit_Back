@@ -11,8 +11,10 @@
 const moment = require('moment-timezone');
 const UserStreak = require('../models/userStreak');
 const UserNotification = require('../models/userNotification');
-const { computeStreak, computeStreakFromDays, buildCalendarMonth, getMonthlyAttendance, getTrophyStreakWeeks } = require('../services/gamificationService');
+const { computeStreak, computeStreakFromDays, computeStreakStatsFromDays, buildCalendarMonth, getMonthlyAttendance, getTrophyStreakWeeks } = require('../services/gamificationService');
 const Reservation = require('../models/reservations');
+const Trophy = require('../models/trophy');
+const { TROPHIES, TROPHIES_START } = require('../lib/trophies');
 
 const TZ = 'America/Bogota';
 
@@ -96,6 +98,76 @@ exports.getAllStreaks = async (req, res) => {
   } catch (err) {
     console.error('[gamification] getAllStreaks error:', err);
     return res.status(500).json({ message: 'Error al obtener rachas' });
+  }
+};
+
+/**
+ * GET /api/gamification/leaderboard
+ * Admin-only. Ranking completo del juego de rachas: por usuario activo devuelve
+ * nombre, racha actual, mejor racha (ambas en semanas, desde TROPHIES_START),
+ * medallas de racha desbloqueadas y trofeos especiales otorgados por el admin.
+ * Mismo patrón bulk de getAllStreaks: una query por colección, cálculo en memoria.
+ */
+exports.getStreakLeaderboard = async (req, res) => {
+  try {
+    const User = require('../models/users');
+
+    const [activeUsers, allAttended, awarded, catalog] = await Promise.all([
+      User.find({ Active: 'Sí' }).select('_id FirstName LastName').lean(),
+      Reservation.find({ Attendance: { $ne: 'No' } }, { userId: 1, day: 1, _id: 0 }).lean(),
+      UserNotification.find(
+        { type: 'achievement', trophyKey: { $ne: null } },
+        { userId: 1, trophyKey: 1, _id: 0 },
+      ).lean(),
+      Trophy.find().select('key name label weeks adminOnly').lean(),
+    ]);
+
+    // Días asistidos por usuario.
+    const daysByUser = {};
+    for (const r of allAttended) {
+      const uid = String(r.userId);
+      if (!daysByUser[uid]) daysByUser[uid] = [];
+      daysByUser[uid].push(r.day);
+    }
+
+    // Trofeos especiales otorgados por usuario (sin duplicar keys).
+    const nameByKey = {};
+    for (const t of catalog) nameByKey[t.key] = t.name;
+    const specialsByUser = {};
+    for (const n of awarded) {
+      const uid = String(n.userId);
+      if (!specialsByUser[uid]) specialsByUser[uid] = new Set();
+      specialsByUser[uid].add(n.trophyKey);
+    }
+
+    const usuarios = activeUsers.map((u) => {
+      const uid = String(u._id);
+      const { currentStreak, longestStreak } = computeStreakStatsFromDays(daysByUser[uid] || []);
+      const medallas = TROPHIES
+        .filter((t) => t.weeks <= longestStreak)
+        .map((t) => ({ key: t.key, nombre: t.name, semanas: t.weeks }));
+      const trofeosEspeciales = [...(specialsByUser[uid] || [])]
+        .map((key) => ({ key, nombre: nameByKey[key] || key }));
+      return {
+        _id: uid,
+        nombre: `${u.FirstName || ''} ${u.LastName || ''}`.trim(),
+        rachaActual: currentStreak,
+        mejorRacha: longestStreak,
+        medallas,
+        trofeosEspeciales,
+      };
+    });
+
+    usuarios.sort((a, b) =>
+      b.rachaActual - a.rachaActual
+      || b.mejorRacha - a.mejorRacha
+      || (b.medallas.length + b.trofeosEspeciales.length) - (a.medallas.length + a.trofeosEspeciales.length)
+      || a.nombre.localeCompare(b.nombre));
+
+    return res.json({ inicioJuego: TROPHIES_START, totalUsuarios: usuarios.length, usuarios });
+  } catch (err) {
+    console.error('[gamification] getStreakLeaderboard error:', err);
+    return res.status(500).json({ message: 'Error al obtener el ranking de rachas' });
   }
 };
 

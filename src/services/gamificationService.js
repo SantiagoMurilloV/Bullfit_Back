@@ -101,6 +101,63 @@ function computeStreakFromDays(attendedDays) {
 }
 
 /**
+ * Pure current + longest streak calculation from an already-loaded array of
+ * day strings. Same floor/business-day rules as computeStreakFromDays, plus
+ * the forward pass for the longest streak — used by the leaderboard endpoint
+ * to rank every user without N queries.
+ */
+function computeStreakStatsFromDays(attendedDays) {
+  const today = moment.tz(TZ).format('YYYY-MM-DD');
+  const todayKey = weekKey(today);
+  const weekMap = {};
+  for (const day of attendedDays) {
+    if (day > today) continue;            // ignorar reservas futuras
+    if (day < TROPHIES_START) continue;   // el juego arranca en la fecha de lanzamiento
+    if (!isBusinessDay(day)) continue;
+    const k = weekKey(day);
+    if (!weekMap[k]) weekMap[k] = new Set();
+    weekMap[k].add(day);
+  }
+  if (!Object.keys(weekMap).length) return { currentStreak: 0, longestStreak: 0 };
+
+  // Current streak: walk backwards from the current week (counted only if
+  // already complete), then previous weeks with no gaps.
+  const prevWeekKey = moment.tz(TZ).startOf('isoWeek').subtract(1, 'week').format('GGGG-[W]WW');
+  let currentStreak = 0;
+  if (weekMap[todayKey] && hasThreeConsecutive(weekMap[todayKey])) currentStreak++;
+  let checkKey = prevWeekKey;
+  while (true) {
+    const set = weekMap[checkKey];
+    if (!set || !hasThreeConsecutive(set)) break;
+    currentStreak++;
+    checkKey = moment.tz(checkKey, 'GGGG-[W]WW', TZ).subtract(1, 'week').format('GGGG-[W]WW');
+  }
+
+  // Longest streak: forward pass over all attended weeks, breaking on gaps
+  // or incomplete weeks (same logic as computeStreak).
+  const sortedWeeks = Object.keys(weekMap).sort();
+  let best = 0;
+  let run = 0;
+  let prevKey = null;
+  for (const k of sortedWeeks) {
+    const complete = hasThreeConsecutive(weekMap[k]);
+    const gap = prevKey
+      ? moment.tz(k, 'GGGG-[W]WW', TZ).diff(moment.tz(prevKey, 'GGGG-[W]WW', TZ), 'weeks') > 1
+      : false;
+    if (gap || !complete) {
+      if (run > best) best = run;
+      run = complete ? 1 : 0;
+    } else {
+      run++;
+    }
+    prevKey = k;
+  }
+  if (run > best) best = run;
+
+  return { currentStreak, longestStreak: Math.max(best, currentStreak) };
+}
+
+/**
  * Compute streak data for a user from their attendance history.
  *
  * @param {string} userId  - Mongoose ObjectId string
@@ -439,6 +496,7 @@ async function getTrophyStreakWeeks(userId) {
 module.exports = {
   computeStreak,
   computeStreakFromDays,
+  computeStreakStatsFromDays,
   updateUserStreak,
   buildCalendarMonth,
   getMonthlyAttendance,
