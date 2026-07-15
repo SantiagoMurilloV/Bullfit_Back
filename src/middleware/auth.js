@@ -64,4 +64,22 @@ const requireAdmin = (req, res, next) => {
   return next();
 };
 
-module.exports = { requireAuth, requireAdmin };
+// requireSelfOrAdmin('userId'): autorización horizontal — el :param de la ruta
+// debe ser el propio usuario autenticado (req.auth.sub) o el rol debe ser
+// admin. Hace cumplir EN EL SERVIDOR la privacidad "solo mis datos" que Bull
+// customer promete (antes solo se validaba en el cliente).
+const requireSelfOrAdmin = (param = 'userId') => (req, res, next) => {
+  if (!req.auth) {
+    return requireAuth(req, res, () => requireSelfOrAdmin(param)(req, res, next));
+  }
+  if (req.auth.role === 'admin') {
+    return next();
+  }
+  const target = req.params[param];
+  if (target && req.auth.sub && String(target) === String(req.auth.sub)) {
+    return next();
+  }
+  return res.status(403).json({ message: 'Solo puedes consultar tu propia información' });
+};
+
+module.exports = { requireAuth, requireAdmin, requireSelfOrAdmin };
