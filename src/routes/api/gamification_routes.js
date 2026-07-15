@@ -9,7 +9,7 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../../controllers/gamification_controller');
-const { requireAuth, requireAdmin } = require('../../middleware/auth');
+const { requireAuth, requireAdmin, requireSelfOrAdmin } = require('../../middleware/auth');
 
 // ── Streak + calendar ────────────────────────────────────────────────────────
 // GET /api/gamification/streaks/all  — debe ir ANTES de /:userId para evitar shadowing
@@ -19,14 +19,15 @@ router.get('/gamification/streaks/all', requireAuth, ctrl.getAllStreaks);
 // También ANTES de /:userId para evitar shadowing.
 router.get('/gamification/leaderboard', requireAdmin, ctrl.getStreakLeaderboard);
 
+// Autorización horizontal: cada usuario solo consulta SU racha; el admin, todas.
 // GET /api/gamification/:userId?year=2026&month=6
-router.get('/gamification/:userId', requireAuth, ctrl.getUserGamification);
+router.get('/gamification/:userId', requireAuth, requireSelfOrAdmin('userId'), ctrl.getUserGamification);
 
 // GET /api/gamification/:userId/streak  (lightweight, for customer list cards)
-router.get('/gamification/:userId/streak', requireAuth, ctrl.getUserStreak);
+router.get('/gamification/:userId/streak', requireAuth, requireSelfOrAdmin('userId'), ctrl.getUserStreak);
 
 // GET /api/gamification/:userId/progress?months=3  (constancy chart + trophies)
-router.get('/gamification/:userId/progress', requireAuth, ctrl.getUserProgress);
+router.get('/gamification/:userId/progress', requireAuth, requireSelfOrAdmin('userId'), ctrl.getUserProgress);
 
 // ── Notification bell ────────────────────────────────────────────────────────
 // Order matters: put /read-all and /all before /:id to avoid route shadowing.

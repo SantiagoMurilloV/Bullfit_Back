@@ -874,6 +874,93 @@ exports.getAbsencesByUser = async (req, res) => {
   }
 };
 
+// Inactividad por usuario calculada server-side sobre TODA la colección de
+// reservas (la caché de getAllReservations solo cubre ~2 semanas y NO sirve
+// para esto). Devuelve los usuarios cuya última reserva es anterior al umbral
+// (?days=N, default 30) o que nunca han reservado. ?onlyActive=false incluye
+// también usuarios desactivados (default: solo Active='Sí').
+exports.getInactivityByUser = async (req, res) => {
+  const profiler = startProfiler('getInactivityByUser');
+  try {
+    const days = Number(req.query.days) > 0 ? Math.floor(Number(req.query.days)) : 30;
+    const onlyActive = req.query.onlyActive !== 'false' && req.query.onlyActive !== '0';
+
+    // Fecha de hoy en Colombia (UTC-5) como string YYYY-MM-DD.
+    const todayCol = new Date(Date.now() - 5 * 60 * 60 * 1000);
+    const todayStr = todayCol.toISOString().split('T')[0];
+    const cutoff = new Date(todayCol);
+    cutoff.setUTCDate(cutoff.getUTCDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+
+    const userFilter = onlyActive ? { Active: { $in: ['Sí', 'Si'] } } : {};
+    const [users, lastByUser] = await Promise.all([
+      User.find(userFilter).select('FirstName LastName Active Plan Phone').lean(),
+      // Última reserva PASADA o de hoy por usuario (las futuras no cuentan
+      // como "actividad ya ocurrida", pero sí indican intención de volver).
+      // OJO: en BSON null ordena ANTES que los strings, así que $min con null
+      // devolvería siempre null. Se usa un centinela alto y se limpia en JS.
+      Reservation.aggregate([
+        {
+          $group: {
+            _id: '$userId',
+            ultimaReserva: { $max: { $cond: [{ $lte: ['$day', todayStr] }, '$day', null] } },
+            proximaReserva: { $min: { $cond: [{ $gt: ['$day', todayStr] }, '$day', '9999-99-99'] } },
+          },
+        },
+      ]),
+    ]);
+
+    const lastMap = {};
+    for (const row of lastByUser) {
+      if (!row._id) continue;
+      lastMap[row._id.toString()] = {
+        ultimaReserva: row.ultimaReserva || null,
+        proximaReserva: row.proximaReserva === '9999-99-99' ? null : (row.proximaReserva || null),
+      };
+    }
+
+    const usuarios = users
+      .map((u) => {
+        const key = u._id.toString();
+        const info = lastMap[key] || { ultimaReserva: null, proximaReserva: null };
+        const diasSinReserva = info.ultimaReserva
+          ? Math.floor((todayCol - new Date(`${info.ultimaReserva}T12:00:00Z`)) / 86400000)
+          : null;
+        return {
+          _id: key,
+          nombre: `${u.FirstName || ''} ${u.LastName || ''}`.trim(),
+          activo: u.Active,
+          plan: u.Plan || null,
+          telefono: u.Phone || null,
+          ultimaReserva: info.ultimaReserva,
+          proximaReserva: info.proximaReserva,
+          diasSinReserva,
+        };
+      })
+      .filter((u) => !u.ultimaReserva || u.ultimaReserva < cutoffStr)
+      .sort((a, b) => {
+        if (!a.ultimaReserva && !b.ultimaReserva) return a.nombre.localeCompare(b.nombre);
+        if (!a.ultimaReserva) return -1;
+        if (!b.ultimaReserva) return 1;
+        return a.ultimaReserva.localeCompare(b.ultimaReserva);
+      });
+
+    res.status(200).json({
+      diasUmbral: days,
+      fechaCorte: cutoffStr,
+      fechaHoy: todayStr,
+      soloActivos: onlyActive,
+      total: usuarios.length,
+      usuarios,
+    });
+  } catch (error) {
+    console.error('Error en getInactivityByUser:', error);
+    res.status(500).json({ error: 'Error al obtener la inactividad por usuario' });
+  } finally {
+    endProfiler(profiler);
+  }
+};
+
 exports.deleteReservation = async (req, res) => {
   const profiler = startProfiler('deleteReservation');
   const reservationId = req.params.reservationId;

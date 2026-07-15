@@ -118,6 +118,14 @@ exports.sendBroadcast = async (req, res) => {
     audience = 'users';
     userFilter = { _id: { $in: validRecipientIds } };
   } else {
+    // Guardrail: un broadcast a TODOS los activos debe ser intencional. Sin
+    // recipients se exige broadcast:true explícito; así un cliente (humano o
+    // agente IA) que omita los destinatarios por error NO spamea a todo el gym.
+    if (req.body.broadcast !== true) {
+      return res.status(400).json({
+        message: 'Envío masivo no confirmado: incluye recipients[] o broadcast:true explícito.',
+      });
+    }
     audience = 'all';
     userFilter = { Active: 'Sí' };
   }
