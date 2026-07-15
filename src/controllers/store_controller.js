@@ -134,6 +134,70 @@ exports.getAllStoreConsumptions = async (req, res) => {
   }
 };
 
+// Deudas de tienda agregadas sobre TODA la colección (una deuda vieja sigue
+// siendo deuda, así que aquí no se filtra por mes). Agrupa por usuario y por
+// producto. Consumida por Bull Admin (GET /api/storeDebts).
+exports.getStoreDebts = async (req, res) => {
+  try {
+    const debts = await UserStore.find({ paymentStatus: { $ne: 'Si' } })
+      .lean()
+      .sort({ dateOfPurchase: -1, purchaseTime: -1 });
+
+    const userIds = [...new Set(debts.map((c) => (c.userId ? c.userId.toString() : null)).filter(Boolean))];
+    let userMap = {};
+    if (userIds.length > 0) {
+      const users = await User.find({ _id: { $in: userIds } })
+        .select('FirstName LastName Active')
+        .lean();
+      userMap = users.reduce((acc, u) => {
+        acc[u._id.toString()] = u;
+        return acc;
+      }, {});
+    }
+
+    const porUsuarioMap = {};
+    const porProductoMap = {};
+    let totalPendiente = 0;
+
+    for (const c of debts) {
+      const valor = Number(c.value) || 0;
+      const cantidad = Number(c.quantity) || 1;
+      totalPendiente += valor;
+
+      const uid = c.userId ? c.userId.toString() : `sin-usuario:${c.name || 'desconocido'}`;
+      const user = userMap[uid];
+      const nombre = user
+        ? `${user.FirstName || ''} ${user.LastName || ''}`.trim()
+        : (c.name || 'Usuario desconocido');
+
+      if (!porUsuarioMap[uid]) porUsuarioMap[uid] = { _id: c.userId || null, nombre, monto: 0, items: [] };
+      porUsuarioMap[uid].monto += valor;
+      porUsuarioMap[uid].items.push({
+        item: c.item || null,
+        producto: itemLabelEs(c.item),
+        cantidad,
+        valor,
+        fecha: c.dateOfPurchase || null,
+      });
+
+      const key = c.item || 'otro';
+      if (!porProductoMap[key]) porProductoMap[key] = { item: key, producto: itemLabelEs(key), cantidad: 0, monto: 0 };
+      porProductoMap[key].cantidad += cantidad;
+      porProductoMap[key].monto += valor;
+    }
+
+    res.json({
+      totalPendiente,
+      totalItems: debts.length,
+      porUsuario: Object.values(porUsuarioMap).sort((a, b) => b.monto - a.monto),
+      porProducto: Object.values(porProductoMap).sort((a, b) => b.monto - a.monto),
+    });
+  } catch (error) {
+    console.error('Error en getStoreDebts:', error);
+    res.status(500).json({ error: 'Error al obtener las deudas de tienda' });
+  }
+};
+
 exports.getStoreConsumptionsByMonth = async (req, res) => {
   try {
     const monthParam = req.params.month || req.query.month || '';

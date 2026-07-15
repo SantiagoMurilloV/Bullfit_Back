@@ -9,6 +9,7 @@ router.use(requireAuth);
 router.post('/store', storeController.createStoreConsumption);
 router.put('/store/:id', storeController.updateStoreConsumption);
 router.get('/store', storeController.getAllStoreConsumptions);
+router.get('/storeDebts', storeController.getStoreDebts);
 router.get('/store/month/:month', storeController.getStoreConsumptionsByMonth);
 router.get('/storeUser/:userId', storeController.getStoreConsumption);
 router.delete('/store/:id', storeController.deleteStoreConsumption);
