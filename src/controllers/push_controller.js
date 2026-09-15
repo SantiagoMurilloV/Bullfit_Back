@@ -113,7 +113,10 @@ exports.sendBroadcast = async (req, res) => {
       .filter((id) => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id))
       .map((id) => new mongoose.Types.ObjectId(id));
     if (validRecipientIds.length === 0) {
-      return res.status(400).json({ message: 'recipients no contiene ids válidos' });
+      return res.status(400).json({
+        message: 'recipients no contiene ids válidos',
+        invalid: recipientsInput.map((id) => String(id)).slice(0, 20),
+      });
     }
     audience = 'users';
     userFilter = { _id: { $in: validRecipientIds } };
@@ -139,8 +142,20 @@ exports.sendBroadcast = async (req, res) => {
     return res.status(500).json({ message: 'Error cargando usuarios' });
   }
 
+  // Targeted send: ids that are well-formed but match no user (typically
+  // hallucinated by an AI client). Reject outright when none exist, and
+  // report the gap otherwise so the caller never mistakes a partial send
+  // for a full one.
+  const missing = audience === 'users' ? validRecipientIds.length - targetUserIds.length : 0;
+  if (audience === 'users' && targetUserIds.length === 0) {
+    return res.status(400).json({
+      message: 'Ninguno de los recipients corresponde a un usuario existente',
+      missing,
+    });
+  }
+
   if (targetUserIds.length === 0) {
-    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox: 0, audience, eligibleUsers: 0 });
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox: 0, audience, eligibleUsers: 0, missing });
   }
 
   // Accept optional type and trophyKey for achievement notifications.
@@ -166,7 +181,7 @@ exports.sendBroadcast = async (req, res) => {
 
   // Web push is optional — if VAPID isn't configured we still saved to inbox.
   if (!isConfigured()) {
-    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox, audience, eligibleUsers: targetUserIds.length });
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox, audience, eligibleUsers: targetUserIds.length, missing });
   }
 
   let subs;
@@ -178,7 +193,7 @@ exports.sendBroadcast = async (req, res) => {
   }
 
   if (subs.length === 0) {
-    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox, audience, eligibleUsers: targetUserIds.length });
+    return res.json({ sent: 0, gone: 0, failed: 0, total: 0, inbox, audience, eligibleUsers: targetUserIds.length, missing });
   }
 
   const payload = { title, body, url };
@@ -228,7 +243,7 @@ exports.sendBroadcast = async (req, res) => {
     console.error('[push/send] error guardando log:', err);
   }
 
-  return res.json({ sent, gone, failed, total: subs.length, inbox, audience, eligibleUsers: targetUserIds.length });
+  return res.json({ sent, gone, failed, total: subs.length, inbox, audience, eligibleUsers: targetUserIds.length, missing });
 };
 
 /**
