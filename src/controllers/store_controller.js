@@ -1,5 +1,6 @@
 const UserStore = require('../models/store');
 const User = require('../models/users');
+const Price = require('../models/prices');
 const moment = require('moment-timezone');
 const { getPriceValue } = require('../services/priceService');
 const { notifyUser } = require('../lib/notifyUser');
@@ -12,7 +13,24 @@ const ITEM_LABELS_ES = {
   proteins: 'Proteínas',
   guestPass: 'Invitado',
 };
-const itemLabelEs = (item) => ITEM_LABELS_ES[item] || item || 'tu compra';
+const itemLabelEs = (item, labels = ITEM_LABELS_ES) =>
+  labels[item] || ITEM_LABELS_ES[item] || item || 'tu compra';
+
+// Products created from the admin catalog carry their display name in
+// Price.name. Merge those onto the legacy map so new products get a proper
+// label in notifications and in Bull Admin's store debts.
+const loadItemLabels = async () => {
+  try {
+    const prices = await Price.find().select('item name').lean();
+    return prices.reduce((acc, p) => {
+      if (p.item && p.name) acc[p.item] = p.name;
+      return acc;
+    }, { ...ITEM_LABELS_ES });
+  } catch (error) {
+    console.error('[store] No se pudo cargar el catálogo de nombres:', error.message);
+    return { ...ITEM_LABELS_ES };
+  }
+};
 
 
 exports.createStoreConsumption = async (req, res) => {
@@ -88,12 +106,15 @@ exports.updateStoreConsumption = async (req, res) => {
     if (paymentStatus === 'Si' && !wasConfirmed && !isGuestPass && updatedConsumption.userId) {
       // Look up the user's name, then notify (fire-and-forget).
       (async () => {
-        const user = await User.findById(updatedConsumption.userId).select('FirstName').lean();
+        const [user, labels] = await Promise.all([
+          User.findById(updatedConsumption.userId).select('FirstName').lean(),
+          loadItemLabels(),
+        ]);
         const name = (user && user.FirstName) ? user.FirstName : '';
         const greeting = name ? ` ${name}` : '';
         await notifyUser(updatedConsumption.userId, {
           title: 'Pago confirmado ✅',
-          body: `¡Gracias${greeting}! 🙌 Confirmamos el pago de ${itemLabelEs(item)} en la tienda. ¡Te esperamos en Bullfit!`,
+          body: `¡Gracias${greeting}! 🙌 Confirmamos el pago de ${itemLabelEs(item, labels)} en la tienda. ¡Te esperamos en Bullfit!`,
           url: '/',
           type: 'system',
         });
@@ -142,6 +163,7 @@ exports.getStoreDebts = async (req, res) => {
     const debts = await UserStore.find({ paymentStatus: { $ne: 'Si' } })
       .lean()
       .sort({ dateOfPurchase: -1, purchaseTime: -1 });
+    const labels = await loadItemLabels();
 
     const userIds = [...new Set(debts.map((c) => (c.userId ? c.userId.toString() : null)).filter(Boolean))];
     let userMap = {};
@@ -174,14 +196,14 @@ exports.getStoreDebts = async (req, res) => {
       porUsuarioMap[uid].monto += valor;
       porUsuarioMap[uid].items.push({
         item: c.item || null,
-        producto: itemLabelEs(c.item),
+        producto: itemLabelEs(c.item, labels),
         cantidad,
         valor,
         fecha: c.dateOfPurchase || null,
       });
 
       const key = c.item || 'otro';
-      if (!porProductoMap[key]) porProductoMap[key] = { item: key, producto: itemLabelEs(key), cantidad: 0, monto: 0 };
+      if (!porProductoMap[key]) porProductoMap[key] = { item: key, producto: itemLabelEs(key, labels), cantidad: 0, monto: 0 };
       porProductoMap[key].cantidad += cantidad;
       porProductoMap[key].monto += valor;
     }
